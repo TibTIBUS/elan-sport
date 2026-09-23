@@ -1,0 +1,86 @@
+{
+  "format": "elan-clips",
+  "version": 1,
+  "voice": "fr_FR-siwis-medium",
+  "voiceUrl": "https://huggingface.co/rhasspy/piper-voices/resolve/main/fr/fr_FR/siwis/medium/",
+  "modelSha256": "641d1ab097da2b81128c076810edb052b385decc8be3381814802a64a73baf99",
+  "generator": "piper-tts 1.8.0",
+  "license": "Voir CREDITS.md",
+  "clips": {
+    "n1": {
+      "text": "Un.",
+      "file": "n1.mp3",
+      "durationS": 0.42
+    },
+    "n2": {
+      "text": "Deux.",
+      "file": "n2.mp3",
+      "durationS": 0.39
+    },
+    "n3": {
+      "text": "Trois.",
+      "file": "n3.mp3",
+      "durationS": 0.44
+    },
+    "n4": {
+      "text": "Quatre.",
+      "file": "n4.mp3",
+      "durationS": 0.52
+    },
+    "n5": {
+      "text": "Cinq.",
+      "file": "n5.mp3",
+      "durationS": 0.5
+    },
+    "n6": {
+      "text": "Six.",
+      "file": "n6.mp3",
+      "durationS": 0.57
+    },
+    "n7": {
+      "text": "Sept.",
+      "file": "n7.mp3",
+      "durationS": 0.52
+    },
+    "n8": {
+      "text": "Huit.",
+      "file": "n8.mp3",
+      "durationS": 0.5
+    },
+    "n9": {
+      "text": "Neuf.",
+      "file": "n9.mp3",
+      "durationS": 0.47
+    },
+    "n10": {
+      "text": "Dix.",
+      "file": "n10.mp3",
+      "durationS": 0.47
+    },
+    "partez": {
+      "text": "Partez !",
+      "file": "partez.mp3",
+      "durationS": 0.55
+    },
+    "repos": {
+      "text": "Repos.",
+      "file": "repos.mp3",
+      "durationS": 0.63
+    },
+    "fin": {
+      "text": "Séance terminée.",
+      "file": "fin.mp3",
+      "durationS": 0.97
+    },
+    "enc1": {
+      "text": "Allez, tu y es presque !",
+      "file": "enc1.mp3",
+      "durationS": 1.65
+    },
+    "enc2": {
+      "text": "Dernière série, on lâche rien !",
+      "file": "enc2.mp3",
+      "durationS": 2.06
+    }
+  }
+}
