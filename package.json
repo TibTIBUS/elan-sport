@@ -1,0 +1,7 @@
+{
+  "name": "elan-sport",
+  "private": true,
+  "version": "0.1.1",
+  "type": "module",
+  "scripts": { "test": "node --test", "start": "python3 -m http.server 8080" }
+}

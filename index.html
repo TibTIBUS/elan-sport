@@ -1,12 +1,33 @@
 <!doctype html>
 <html lang="fr">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Élan</title>
-<meta http-equiv="refresh" content="0; url=./lab.html">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#232323"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="ÉLAN"><meta name="description" content="Tes minuteurs et tes répétitions, simplement. ÉLAN accompagne ton sport du matin.">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=League+Spartan:wght@400;500;600;700&family=Poppins:wght@500;600;700;800&display=swap" rel="stylesheet">
+<link rel="manifest" href="./manifest.webmanifest"><link rel="icon" href="./assets/icons/icon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="./assets/icons/icon-192.png"><link rel="stylesheet" href="./css/app.css"><title>ÉLAN · Ton moment à toi</title>
 </head>
-<body style="background:#15202b;color:#e6ecf1;font-family:system-ui;padding:24px">
-<p>Élan est en construction. <a href="./lab.html" style="color:#ffb347">Ouvrir le labo</a>.</p>
-</body>
-</html>
+<body><a class="skip-link" href="#setup">Aller au minuteur</a><div class="shell">
+<header class="header"><a class="brand" href="./" aria-label="ÉLAN, accueil">ÉLAN<span class="brand-mark" aria-hidden="true">↗</span></a><button id="settings-open" class="icon-button" aria-label="Ouvrir les réglages">⚙</button></header>
+<main>
+<section id="home" aria-labelledby="welcome">
+<div class="intro"><p class="eyebrow" id="today">TON MOMENT À TOI</p><h1 id="welcome">Bonjour Thibaut<span class="hello-dot">.</span></h1><p>Un peu chaque jour. <strong>À ton rythme.</strong></p></div>
+<aside id="recovery" class="notice" hidden><strong>Une séance t’attend.</strong><p id="recovery-label">Tu peux retrouver ton activité interrompue.</p><div class="row"><button id="recover" class="primary">Retrouver ma séance</button><button id="discard">Effacer</button></div></aside>
+<div class="training-layout"><div class="mode-picker"><div class="section-heading"><h2>Ton entraînement</h2><span>5 modes</span></div><div id="modes" class="mode-grid" aria-label="Choisir un minuteur"></div><p class="picker-note">Choisis ton format, règle la durée.<br>Et prends ce moment pour toi.</p></div>
+<form id="setup" class="setup-card" tabindex="-1"><div class="card-heading"><div><p class="eyebrow">À TOI DE JOUER</p><h2 id="setup-title">Compte à rebours</h2></div><span id="setup-symbol" class="mode-symbol" aria-hidden="true">◷</span></div><p id="setup-desc" class="muted"></p><div id="setup-fields"></div><div class="launch-meta"><span id="precount-label">5 secondes pour te préparer</span><span id="sound-label">Sons activés</span></div><button id="start" class="primary start-button" type="submit">C’est parti <span aria-hidden="true">↗</span></button></form></div>
+<p class="home-footnote">Ton espace personnel. Tes données restent sur cet appareil.</p>
+</section>
+<section id="session" hidden aria-labelledby="session-title">
+<div class="session-top"><span class="eyebrow" id="session-mode"></span><span id="round-label" class="pill"></span></div><h1 id="session-title" class="session-title">Prépare-toi</h1><p id="session-hint" class="muted center"></p>
+<div id="clock-panel" class="clock-panel"><div id="clock" role="timer" aria-label="Temps restant">00:00</div><div id="fraction" class="fraction"></div><div class="progress-track" aria-hidden="true"><div id="progress"></div></div></div>
+<div id="rep-panel" class="rep-panel" hidden><span class="eyebrow">RÉPÉTITIONS</span><div id="rep-count">0</div><div class="rep-actions"><button id="minus" aria-label="Retirer une répétition">−1</button><button id="plus" class="primary" aria-label="Ajouter une répétition">+1</button></div></div>
+<div id="next" class="next-phase"></div><div id="audio-alert" class="notice" hidden><p>Le son est interrompu.</p><button id="audio-resume">Réactiver le son</button></div><p id="clock-alert" class="notice" hidden></p>
+<div class="session-actions"><button id="pause" class="primary big">Pause</button><button id="lap" hidden>Marquer un tour</button><button id="stop" class="quiet">Terminer</button></div><p id="wake-status" class="status-line"></p><ol id="laps" class="laps" aria-label="Tours du chronomètre"></ol>
+</section>
+<section id="summary" hidden aria-labelledby="summary-title"><div class="finish-mark" aria-hidden="true">✓</div><p class="eyebrow center">UN MOMENT POUR TOI</p><h1 id="summary-title">Bien joué.</h1><p id="summary-message" class="muted center"></p><div id="summary-stats" class="summary-grid"></div><ol id="summary-laps" class="laps" aria-label="Résultat des tours"></ol><button id="again" class="primary big">Recommencer</button><button id="home-button">Choisir un minuteur</button></section><p id="storage-alert" class="notice" hidden></p>
+</main><footer><span>ÉLAN <span id="version"></span></span><a href="./lab.html">Laboratoire caméra ↗</a></footer></div><nav id="bottom-nav" class="bottom-nav" aria-label="Navigation principale"><button id="nav-home" aria-current="page"><span aria-hidden="true">⌂</span>Accueil</button><button id="nav-timers"><span aria-hidden="true">◷</span>Minuteurs</button><button id="nav-settings"><span aria-hidden="true">⚙</span>Réglages</button></nav>
+<dialog id="settings"><div class="dialog-head"><h2>À ta façon</h2><button id="settings-close" class="icon-button" aria-label="Fermer les réglages">×</button></div><form id="settings-form">
+<label>Avant de démarrer<select name="precountSec"><option value="0">Tout de suite</option><option value="3">3 secondes</option><option value="5">5 secondes</option><option value="10">10 secondes</option></select></label>
+<label class="switch-row">Bips et sons<input type="checkbox" name="sound"></label><label class="switch-row">Annonces de départ et de repos<input type="checkbox" name="voice"></label><label class="switch-row">3 bips avant la fin<input type="checkbox" name="warning3"></label><label>Bip régulier, en secondes <span class="muted">(0 = désactivé)</span><input name="intervalSec" type="number" min="0" max="3600" step="1" inputmode="numeric"></label><label>Volume<input name="volume" type="range" min="0" max="1" step="0.05"></label><label class="switch-row">Mode salle de sport<input type="checkbox" name="gym"></label><p class="small muted">Sons discrets, voix coupée, signal visuel.</p><p class="small muted">Avec Spotify, les sons se mélangent à ta musique. Désactive le mode silencieux de l’iPhone pour les entendre.</p><button type="button" id="test-audio">Tester le son et la voix</button><p id="audio-test-status" class="small" role="status"></p><button type="submit" class="primary">Enregistrer</button></form></dialog>
+<dialog id="stop-dialog"><h2>Terminer maintenant ?</h2><p>La séance sera marquée comme interrompue.</p><div class="row"><button id="stop-cancel">Continuer</button><button id="stop-confirm" class="primary">Terminer</button></div></dialog>
+<div id="toast" role="status" class="toast" hidden></div><noscript>Active JavaScript dans Safari pour utiliser les minuteurs ÉLAN.</noscript><script type="module" src="./js/app.js"></script>
+</body></html>
