@@ -3,6 +3,7 @@ import { AudioEngine } from './core/audio.js';
 import { WakeLock } from './core/wakelock.js';
 import { read, write, remove, storageWarning } from './core/storage.js';
 import { APP_VERSION } from './version.js';
+import { PushupFaceCounter, faceSignal, faceConfidence } from './core/pushup-face-counter.js';
 
 const $ = selector => document.querySelector(selector);
 const modes = {
@@ -64,6 +65,7 @@ function renderSetup() {
   if (selected === 'countdown' || selected === 'amrap') {
     const d = val('durationSec', selected === 'amrap' ? 600 : 60, 1, 86400);
     html = `<div class="fields-grid">${field('min', 'Minutes', Math.floor(d / 60), 0, 1440)}${field('sec', 'Secondes', d % 60, 0, 59)}</div><div class="presets" aria-label="Durées rapides">${[30, 60, 120, 300].map(s => `<button type="button" data-duration="${s}">${s < 60 ? s + ' s' : s / 60 + ' min'}</button>`).join('')}</div>`;
+    if (selected === 'amrap') html += `<label class="switch-row">Compter mes pompes avec la caméra<input type="checkbox" name="pushupCamera" ${previous.pushupCamera ? 'checked' : ''}></label><p class="small muted">Le traitement reste dans ton navigateur. Aucune image n’est enregistrée.</p>`;
   }
   if (selected === 'intervals') html = `<div class="fields-grid">${field('workSec', 'Effort · secondes', val('workSec', 20, 1, 3600), 1, 3600)}${field('restSec', 'Repos · secondes', val('restSec', 10, 0, 3600), 0, 3600)}${field('rounds', 'Nombre de tours', val('rounds', 8, 1, 200), 1, 200)}</div><label class="switch-row">Repos après le dernier tour<input type="checkbox" name="finalRest" ${previous.finalRest ? 'checked' : ''}></label><div class="presets"><button type="button" data-tabata>Tabata · 20 / 10 × 8</button></div>`;
   if (selected === 'emom') html = field('minutes', 'Durée · minutes', val('minutes', 10, 1, 180), 1, 180);
@@ -80,7 +82,7 @@ $('#setup-fields').addEventListener('click', e => {
 function configFromForm() {
   const form = $('#setup').elements, num = key => form[key] ? Number(form[key].value) : undefined;
   return { mode: selected, durationSec: form.min ? num('min') * 60 + num('sec') : undefined,
-    workSec: num('workSec'), restSec: num('restSec'), rounds: num('rounds'), minutes: num('minutes'), finalRest: form.finalRest?.checked,
+    workSec: num('workSec'), restSec: num('restSec'), rounds: num('rounds'), minutes: num('minutes'), finalRest: form.finalRest?.checked, pushupCamera: Boolean(form.pushupCamera?.checked),
     precountSec: settings.precountSec, intervalSec: settings.intervalSec, warning3: settings.warning3 };
 }
 async function launch(config) {
@@ -97,6 +99,7 @@ async function launch(config) {
     engine.start(config); lastConfig = { ...engine.config }; lastLapCount = -1;
     savedDraft = null; remove('active'); $('#recovery').hidden = true; write('config:' + config.mode, lastConfig);
     show('session'); $('#audio-alert').hidden = !settings.sound || soundReady; renderSession();
+    if (config.mode === 'amrap' && config.pushupCamera) void startPushupCamera(); else stopPushupCamera();
     audio.schedule(engine.schedule(2000), performance.now());
     await wake.set(true); saveDraft();
     if (settings.sound && !soundReady) toast('Le minuteur fonctionne. Touche « Réactiver le son » pour les alertes.');
@@ -141,6 +144,7 @@ function saveDraft() {
   const warning = storageWarning(); $('#storage-alert').hidden = !warning; text('#storage-alert', warning);
 }
 function finish(s) {
+  stopPushupCamera();
   void wake.set(false); remove('active'); savedDraft = null; $('#recovery').hidden = true;
   const completed = s.status === 'finished';
   text('#summary-title', completed ? 'Bien joué.' : 'Chaque effort compte.');
@@ -208,7 +212,7 @@ $('#recover').addEventListener('click', () => {
     else { show('session'); renderSession(); toast('Séance retrouvée. Touche Reprendre quand tu es prêt.'); saveDraft(); }
   } catch { toast('Cette sauvegarde ne peut pas être restaurée. Tu peux l’effacer et démarrer une séance.'); }
 });
-function hide() { engine.hide(); audio.cancel(); saveDraft(); void wake.set(false); }
+function hide() { engine.hide(); audio.cancel(); stopPushupCamera(); saveDraft(); void wake.set(false); }
 async function foreground() {
   engine.show();
   if (engine.status === 'running') { void wake.set(true); if (settings.sound) await audio.ensure(); }
@@ -224,6 +228,118 @@ setInterval(() => {
   if (view === 'session') renderSession();
   if (performance.now() - savedAt > 1000) { savedAt = performance.now(); saveDraft(); }
 }, 50);
+
+/* ---------- Comptage des pompes par détection du visage ---------- */
+const MP_VERSION = '1.0.1';
+const MP_BASE = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VERSION}`;
+const FACE_MODEL = 'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite';
+const pushupCounter = new PushupFaceCounter({ fps: 15 });
+let pushupStream = null, faceDetector = null, pushupRunning = false, pushupLastFrame = 0;
+let calibrationCapture = null, calibration = { top: null, bottom: null };
+
+function cameraStatus(message) { text('#camera-state', message); }
+function cameraHint(message) { text('#camera-hint', message); }
+
+async function ensureFaceDetector() {
+  if (faceDetector) return faceDetector;
+  cameraStatus('Chargement de la reconnaissance…');
+  const mp = await import(`${MP_BASE}/vision_bundle.mjs`);
+  const fileset = await mp.FilesetResolver.forVisionTasks(`${MP_BASE}/wasm`);
+  const options = delegate => ({ baseOptions: { modelAssetPath: FACE_MODEL, delegate }, runningMode: 'VIDEO', minDetectionConfidence: 0.55 });
+  try { faceDetector = await mp.FaceDetector.createFromOptions(fileset, options('GPU')); }
+  catch { faceDetector = await mp.FaceDetector.createFromOptions(fileset, options('CPU')); }
+  return faceDetector;
+}
+
+async function startPushupCamera() {
+  if (pushupRunning) return;
+  const panel = $('#pushup-camera'), video = $('#pushup-video');
+  panel.hidden = false; cameraStatus('Autorisation caméra…');
+  cameraHint('Pose le téléphone au sol devant ta tête. Ton visage doit rester visible.');
+  calibration = { top: null, bottom: null }; pushupCounter.reset();
+  $('#camera-top').classList.remove('done'); $('#camera-bottom').classList.remove('done');
+  try {
+    pushupStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
+    video.srcObject = pushupStream; await video.play(); await ensureFaceDetector();
+    pushupRunning = true; pushupLastFrame = 0; cameraStatus('Caméra prête · calibre les deux positions'); nextPushupFrame();
+  } catch (e) {
+    cameraStatus('Caméra indisponible');
+    cameraHint(e.name === 'NotAllowedError' ? 'Autorise la caméra dans Safari pour activer le comptage automatique.' : 'Le comptage manuel reste disponible.');
+    stopPushupCamera(false);
+  }
+}
+
+function stopPushupCamera(hidePanel = true) {
+  pushupRunning = false; calibrationCapture = null; pushupCounter.invalidate();
+  pushupStream?.getTracks().forEach(track => track.stop()); pushupStream = null;
+  const video = $('#pushup-video'); if (video) video.srcObject = null;
+  if (hidePanel) $('#pushup-camera').hidden = true;
+}
+
+function nextPushupFrame() {
+  if (!pushupRunning) return;
+  const video = $('#pushup-video');
+  if ('requestVideoFrameCallback' in video) video.requestVideoFrameCallback(processPushupFrame);
+  else requestAnimationFrame(processPushupFrame);
+}
+
+function processPushupFrame() {
+  if (!pushupRunning) return;
+  const now = performance.now();
+  if (now - pushupLastFrame >= 64 && faceDetector && $('#pushup-video').readyState >= 2) {
+    pushupLastFrame = now;
+    try {
+      const detection = faceDetector.detectForVideo($('#pushup-video'), now).detections?.[0];
+      const signal = faceSignal(detection, $('#pushup-video').videoHeight);
+      const confidence = faceConfidence(detection);
+      if (calibrationCapture && signal != null && confidence >= 0.55) calibrationCapture.samples.push(signal);
+      if (engine.status === 'running') {
+        const before = pushupCounter.reps;
+        const state = pushupCounter.feed(signal, now, confidence);
+        if (state.reps > before) {
+          engine.changeReps(1, 'camera');
+          renderSession(); saveDraft();
+          cameraStatus(`Pompe reconnue · ${engine.snapshot().reps}`);
+        } else if (state.calibrated) {
+          cameraStatus(state.lost ? 'Visage perdu · replace-toi' : state.state === 'down' ? 'Bas · remonte' : 'Suivi actif');
+        }
+      } else pushupCounter.invalidate();
+    } catch { pushupCounter.invalidate(); }
+  }
+  nextPushupFrame();
+}
+
+function captureCalibration(which) {
+  if (!pushupRunning || calibrationCapture) return;
+  const button = which === 'top' ? $('#camera-top') : $('#camera-bottom');
+  calibrationCapture = { which, samples: [] };
+  button.disabled = true;
+  cameraStatus(which === 'top' ? 'Tiens la position haute…' : 'Tiens la position basse…');
+  setTimeout(() => {
+    const capture = calibrationCapture;
+    calibrationCapture = null; button.disabled = false;
+    if (!capture || capture.which !== which || capture.samples.length < 5) {
+      cameraStatus('Visage mal détecté · recommence'); return;
+    }
+    calibration[which] = capture.samples;
+    button.classList.add('done');
+    if (calibration.top && calibration.bottom) {
+      try {
+        pushupCounter.calibrate(calibration.top, calibration.bottom);
+        cameraStatus('Calibré · commence tes pompes');
+        cameraHint('Une répétition est validée uniquement après un cycle complet haut → bas → haut.');
+      } catch {
+        calibration[which] = null; button.classList.remove('done');
+        cameraStatus('Écart trop faible · recommence cette position');
+      }
+    } else cameraStatus(which === 'top' ? 'Position haute mémorisée' : 'Position basse mémorisée');
+  }, 800);
+}
+
+$('#camera-top').addEventListener('click', () => captureCalibration('top'));
+$('#camera-bottom').addEventListener('click', () => captureCalibration('bottom'));
+$('#camera-stop').addEventListener('click', () => { stopPushupCamera(); toast('Caméra coupée. Le compteur manuel reste disponible.'); });
+
 text('#version', APP_VERSION);
 text('#today', new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date()).toUpperCase());
 $('#recovery').hidden = !savedDraft || !['running', 'paused'].includes(savedDraft.status);
