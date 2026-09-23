@@ -20,6 +20,12 @@
 <div class="session-top"><span class="eyebrow" id="session-mode"></span><span id="round-label" class="pill"></span></div><h1 id="session-title" class="session-title">Prépare-toi</h1><p id="session-hint" class="muted center"></p>
 <div id="clock-panel" class="clock-panel"><div id="clock" role="timer" aria-label="Temps restant">00:00</div><div id="fraction" class="fraction"></div><div class="progress-track" aria-hidden="true"><div id="progress"></div></div></div>
 <div id="rep-panel" class="rep-panel" hidden><span class="eyebrow">RÉPÉTITIONS</span><div id="rep-count">0</div><div class="rep-actions"><button id="minus" aria-label="Retirer une répétition">−1</button><button id="plus" class="primary" aria-label="Ajouter une répétition">+1</button></div></div>
+<div id="pushup-camera" class="pushup-camera" hidden>
+  <div class="camera-head"><div><span class="eyebrow">COMPTEUR CAMÉRA</span><strong id="camera-state">Préparation…</strong></div><button id="camera-stop" type="button">Couper</button></div>
+  <div class="camera-preview"><video id="pushup-video" playsinline muted></video><div class="camera-guide" aria-hidden="true"></div></div>
+  <p id="camera-hint" class="small muted">Pose le téléphone au sol devant ta tête. Ton visage doit rester visible.</p>
+  <div id="camera-calibration" class="camera-calibration"><button id="camera-top" type="button">Mémoriser position haute</button><button id="camera-bottom" type="button">Mémoriser position basse</button></div>
+</div>
 <div id="next" class="next-phase"></div><div id="audio-alert" class="notice" hidden><p>Le son est interrompu.</p><button id="audio-resume">Réactiver le son</button></div><p id="clock-alert" class="notice" hidden></p>
 <div class="session-actions"><button id="pause" class="primary big">Pause</button><button id="lap" hidden>Marquer un tour</button><button id="stop" class="quiet">Terminer</button></div><p id="wake-status" class="status-line"></p><ol id="laps" class="laps" aria-label="Tours du chronomètre"></ol>
 </section>
