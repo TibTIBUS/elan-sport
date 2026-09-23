@@ -127,6 +127,7 @@ pre{white-space:pre-wrap;background:var(--surface);border-radius:10px;padding:12
   <p class="help" id="sessionNote" style="margin-top:8px"></p>
   <button class="primary" id="reactivate" hidden>Réactiver le son</button>
   <button class="primary" id="unlock">Activer le son</button>
+  <button id="clockCheck" disabled>Vérifier l'horloge audio</button>
   <button id="beepTest" disabled>Bips 1 par seconde pendant 20 s</button>
   <button id="beepStop" disabled>Arrêter les bips</button>
   <dl id="audioStats"></dl>
@@ -231,7 +232,7 @@ pre{white-space:pre-wrap;background:var(--surface);border-radius:10px;padding:12
 </main>
 
 <script type="module">
-const VERSION = '0.0.7-labo';
+const VERSION = '0.0.8-labo';
 const MP_VERSION = '1.0.1';
 const MP_BASE = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VERSION}`;
 const MODELS = {
@@ -280,7 +281,7 @@ function saveNow() {
     form.spotify = $('#spotify').checked;
     localStorage.setItem(STORE, JSON.stringify({
       savedAt: new Date().toISOString(), version: VERSION, form,
-      audio: R.audio.tests, voice: R.voice.tests, clips: R.clips.tests, guided: R.guided, duck: R.duck, interruptions: R.interruptions,
+      audio: R.audio.tests, clocks: R.audio.clocks || [], recreations: R.audio.recreations || [], voice: R.voice.tests, clips: R.clips.tests, guided: R.guided, duck: R.duck, interruptions: R.interruptions,
       wake: R.wake ? { ...R.wake, running: false } : null,
       camera: { trials: R.camera.trials, minuteLog: R.camera.minuteLog },
       log: R.log.slice(-80),
@@ -292,7 +293,7 @@ function restore() {
   try { d = JSON.parse(localStorage.getItem(STORE) || 'null'); } catch { d = null; }
   if (!d) return;
   for (const [id, v] of Object.entries(d.form || {})) { if (id === 'spotify') $('#spotify').checked = v; else if ($('#' + id) && v != null) $('#' + id).value = v; }
-  R.audio.tests = d.audio || []; R.voice.tests = d.voice || []; R.clips.tests = d.clips || []; R.guided = d.guided || []; R.duck = d.duck || []; R.interruptions = d.interruptions || [];
+  R.audio.tests = d.audio || []; R.audio.clocks = d.clocks || []; R.audio.recreations = d.recreations || []; R.voice.tests = d.voice || []; R.clips.tests = d.clips || []; R.guided = d.guided || []; R.duck = d.duck || []; R.interruptions = d.interruptions || [];
   R.wake = d.wake; R.camera.trials = d.camera?.trials || []; R.camera.minuteLog = d.camera?.minuteLog || [];
   R.log = d.log || [];
   const n = R.audio.tests.length + R.voice.tests.length + R.clips.tests.length + R.camera.trials.length;
@@ -344,7 +345,7 @@ function renderEnv() {
 }
 
 /* ---------- 2. Audio ---------- */
-let ctx = null, activeSched = null;
+let ctx = null, activeSched = null, audioZombie = false;
 function applySession() {
   if (!('audioSession' in navigator)) return 'non supporté';
   try { navigator.audioSession.type = $('#session').value; } catch (e) { log('audioSession : ' + e.message); }
@@ -354,35 +355,82 @@ function renderSession() {
   const s = 'audioSession' in navigator ? navigator.audioSession.type : 'non supporté';
   const note = s === 'ambient' ? 'Se mélange à la musique. En mode silencieux, l\'app est muette.' : s === 'playback' ? 'Sonne même en mode silencieux.' : 'Choisis un type puis active le son.';
   const st = ctx ? ctx.state : 'inactif';
-  const stTxt = st === 'running' ? '<span class="good">en marche</span>' : `<span class="bad">${st}</span>`;
+  const stTxt = audioZombie ? '<span class="bad">figé (déclaré en marche, horloge arrêtée)</span>' : st === 'running' ? '<span class="good">en marche</span>' : `<span class="bad">${st}</span>`;
   $('#sessionNote').innerHTML = `Session active : <strong>${s}</strong>. ${note}<br>Moteur audio : ${stTxt} <span class="help">(« en marche » ne garantit pas que le son est audible)</span>`;
-  $('#reactivate').hidden = !ctx || st === 'running';
+  $('#reactivate').hidden = !ctx || (st === 'running' && !audioZombie);
 }
 renderSession();
 $('#session').addEventListener('change', () => { const t = applySession(); log('Session audio : ' + t); renderSession(); ctx?.resume(); });
 $('#unlock').addEventListener('click', () => unlockAudio());
+function makeContext() {
+  const c = new (window.AudioContext || window.webkitAudioContext)();
+  c.onstatechange = () => {
+    if (c !== ctx) return; // ancien moteur fermé : on l'ignore
+    log('Contexte audio : ' + c.state + (c.state === 'interrupted' ? ' (coupé par iOS)' : ''));
+    R.audio.stateChanges = (R.audio.stateChanges || 0) + 1; renderSession();
+  };
+  return c;
+}
+function primeContext() { const src = ctx.createBufferSource(); src.buffer = ctx.createBuffer(1, 1, 22050); src.connect(ctx.destination); src.start(0); }
 async function unlockAudio() {
   const session = applySession();
-  if (!ctx) {
-    ctx = new (window.AudioContext || window.webkitAudioContext)();
-    ctx.onstatechange = () => { log('Contexte audio : ' + ctx.state + (ctx.state === 'interrupted' ? ' (coupé par iOS)' : '')); R.audio.stateChanges = (R.audio.stateChanges || 0) + 1; renderSession(); };
-  }
-  await ctx.resume();
-  const src = ctx.createBufferSource(); src.buffer = ctx.createBuffer(1, 1, 22050); src.connect(ctx.destination); src.start(0);
+  if (!ctx) ctx = makeContext();
+  const resumed = ctx.resume();
+  primeContext();
+  await resumed;
   R.audio.sampleRate = ctx.sampleRate;
   R.audio.baseLatencyMs = r1(ctx.baseLatency * 1000);
   const ol = ctx.outputLatency; R.audio.outputLatencyMs = ol > 0 && ol < 1 ? r1(ol * 1000) : null;
-  ['#beepTest', '#voiceTest', '#voiceBeeps', '#clipLoad'].forEach((s) => ($(s).disabled = false));
+  ['#beepTest', '#voiceTest', '#voiceBeeps', '#clipLoad', '#clockCheck'].forEach((s) => ($(s).disabled = false));
   renderSession();
   $('#unlock').textContent = 'Son activé';
   renderAudio();
   log('Son activé, session ' + session);
 }
-$('#reactivate').addEventListener('click', () => ensureAudio('réactivation manuelle'));
+// Horloge audio : iOS peut déclarer le moteur « running » alors que son horloge n'avance plus
+// (retour de Spotify). On mesure l'avance réelle de ctx.currentTime sur ~300 ms.
+async function audioClock(label, ms = 300) {
+  if (!ctx) return null;
+  const c = ctx, a0 = c.currentTime, t0 = now();
+  await sleep(ms);
+  if (c !== ctx) return null; // moteur remplacé pendant la mesure
+  const wallMs = now() - t0, audioMs = (c.currentTime - a0) * 1000, ratio = wallMs > 0 ? audioMs / wallMs : 0;
+  const m = { at: new Date().toISOString(), label, state: c.state, wallMs: Math.round(wallMs), audioMs: Math.round(audioMs), ratio: Math.round(ratio * 100) / 100 };
+  m.verdict = c.state !== 'running' ? 'à l\'arrêt' : ratio < 0.5 ? 'zombie' : ratio < 0.9 ? 'lent' : 'sain';
+  audioZombie = m.verdict === 'zombie';
+  (R.audio.clocks ||= []).push(m); if (R.audio.clocks.length > 40) R.audio.clocks.splice(0, 10);
+  log(`Horloge audio (${label}) : +${m.audioMs} ms pour ${m.wallMs} ms, ${m.verdict}`);
+  renderSession(); renderAudio(); save();
+  return m;
+}
+// Remplace le moteur audio par un neuf et redécode les clips. La partie synchrone (création,
+// resume, son muet) s'exécute avant tout await : l'appeler directement depuis un geste.
+async function recreateAudio(reason) {
+  const old = ctx, t0 = now();
+  const rec = { at: new Date().toISOString(), reason, oldState: old?.state ?? null, wasZombie: audioZombie };
+  ctx = makeContext();
+  const resumed = ctx.resume();
+  primeContext();
+  audioZombie = false;
+  if (activeSched) activeSched.stop('moteur recréé');
+  if (sim) { log('Séance simulée arrêtée : moteur recréé'); sim.stop(); }
+  stopAllClips();
+  if (old) old.close().catch(() => {});
+  try { await resumed; } catch (e) { log('Recréation : ' + e.message); }
+  try { rec.clipsRedecoded = await decodeClips(); } catch (e) { rec.clipsRedecoded = 0; log('Recréation, clips : ' + e.message); }
+  Object.assign(rec, { state: ctx.state, ms: Math.round(now() - t0) });
+  (R.audio.recreations ||= []).push(rec);
+  log(`Moteur audio recréé (${reason}) : ${rec.state}, ${rec.clipsRedecoded} clips redécodés en ${rec.ms} ms`);
+  renderSession(); renderAudio(); save();
+  return rec;
+}
+$('#reactivate').addEventListener('click', async () => { await recreateAudio('bouton Réactiver le son'); await audioClock('après réactivation'); });
+$('#clockCheck').addEventListener('click', () => audioClock('vérification manuelle'));
 // Tentative de reprise uniquement sur geste explicite (démarrage d'un test, bouton « Réactiver le son ») ou retour au premier plan.
 async function ensureAudio(label) {
   if (!ctx) { log('Active d\'abord le son (section 2)'); return false; }
-  if (ctx.state !== 'running') {
+  if (audioZombie) await recreateAudio('moteur figé avant « ' + label + ' »');
+  else if (ctx.state !== 'running') {
     const before = ctx.state;
     try { await ctx.resume(); } catch (e) { log('Relance audio : ' + e.message); }
     log(`Moteur audio ${before} → ${ctx.state} avant « ${label} »`);
@@ -463,7 +511,10 @@ class BeepScheduler {
 }
 function renderAudio() {
   const last = R.audio.tests.at(-1);
+  const clk = R.audio.clocks?.at(-1);
   dl($('#audioStats'), {
+    'Horloge audio': clk ? `<span class="${clk.verdict === 'sain' ? 'good' : 'bad'}">${clk.verdict}</span> : +${clk.audioMs} ms pour ${clk.wallMs} ms (${clk.label})` : 'non mesurée',
+    'Moteur recréé': R.audio.recreations?.length ? R.audio.recreations.length + ' fois' : 'jamais',
     'Latence de base': R.audio.baseLatencyMs != null ? R.audio.baseLatencyMs + ' ms' : null,
     'Latence de sortie': R.audio.outputLatencyMs != null ? R.audio.outputLatencyMs + ' ms' : 'non fournie',
     'Dernier test': last ? `${last.test}, ${last.session} : ${last.scheduled} programmés, <span class="${last.dropped ? 'bad' : 'good'}">${last.dropped} abandonnés</span>` : null,
@@ -543,7 +594,7 @@ $('#noteVoice').addEventListener('click', () => {
 /* ---------- 4. Clips vocaux ---------- */
 // Priorités : un signal interrompt tout ; un nombre plus récent remplace l'ancien ; un encouragement ne coupe jamais rien.
 const PRIO = { encouragement: 0, count: 1, goal: 2, signal: 3 };
-const clipBuf = {};
+const clipBuf = {}, clipRaw = {}; // clipRaw : octets MP3 conservés pour redécoder après recréation du moteur
 const activeClips = new Set(); // { src, id, prio, start, end }
 let clipTest = null, sim = null;
 const cstat = (k, n = 1) => { if (clipTest) clipTest[k] = (clipTest[k] || 0) + n; };
@@ -556,9 +607,18 @@ async function loadClips() {
   await Promise.all(ids.map(async (id) => {
     const r = await fetch(base + man.clips[id].file);
     if (!r.ok) throw new Error('fichier manquant : ' + man.clips[id].file);
-    clipBuf[id] = await ctx.decodeAudioData(await r.arrayBuffer());
+    clipRaw[id] = await r.arrayBuffer();
   }));
+  await decodeClips();
   Object.assign(R.clips, { loadMs: Math.round(now() - t0), count: ids.length, voice: man.voice, generator: man.generator, modelSha256: man.modelSha256 });
+}
+// decodeAudioData détache le tampon passé : on lui donne une copie.
+async function decodeClips() {
+  const c = ctx, ids = Object.keys(clipRaw);
+  const bufs = await Promise.all(ids.map((id) => c.decodeAudioData(clipRaw[id].slice(0))));
+  if (c !== ctx) return 0; // moteur remplacé entre-temps
+  ids.forEach((id, i) => (clipBuf[id] = bufs[i]));
+  return ids.length;
 }
 function playClip(id, prio, when = ctx.currentTime) {
   const buf = clipBuf[id];
@@ -711,7 +771,7 @@ $('#noteClips').addEventListener('click', () => {
 });
 
 /* ---------- 5. Veille et Wake Lock ---------- */
-let wakeLock = null, wakeTimer = null, hiddenMark = null;
+let wakeLock = null, wakeTimer = null, hiddenMark = null, lastReturn = null;
 async function requestWake() {
   if (!('wakeLock' in navigator) || !R.wake?.running) return;
   try {
@@ -773,13 +833,23 @@ document.addEventListener('visibilitychange', () => {
     const dMono = now() - hiddenMark.mono, dWall = Date.now() - hiddenMark.wall;
     const dAudio = ctx && hiddenMark.audio != null ? (ctx.currentTime - hiddenMark.audio) * 1000 : null;
     const rec = { at: new Date().toISOString(), hiddenS: r1(dWall / 1000), monoMinusWallMs: Math.round(dMono - dWall), audioMinusWallMs: dAudio == null ? null : Math.round(dAudio - dWall), audioStateOnReturn: ctx?.state ?? null, wakeTestRunning: !!R.wake?.running };
-    R.interruptions.push(rec); save();
+    R.interruptions.push(rec); save(); lastReturn = rec;
     log(`Retour après ${rec.hiddenS} s (mono−civile ${rec.monoMinusWallMs} ms, audio ${rec.audioStateOnReturn ?? 'inactif'})`);
     hiddenMark = null;
   }
   sim?.onVisible();
   if (R.wake?.running && !wakeLock) requestWake();
-  if (ctx && ctx.state !== 'running') ctx.resume().then(() => { log('Retour : moteur audio ' + ctx.state); R.audio.resumes = (R.audio.resumes || 0) + 1; renderSession(); }).catch((e) => { log('Retour : relance impossible, ' + e.message); renderSession(); });
+  if (ctx) {
+    const back = lastReturn; lastReturn = null;
+    const relance = ctx.state !== 'running'
+      ? ctx.resume().then(() => { log('Retour : moteur audio ' + ctx.state); R.audio.resumes = (R.audio.resumes || 0) + 1; }).catch((e) => log('Retour : relance impossible, ' + e.message))
+      : Promise.resolve();
+    // « running » ne suffit pas : on vérifie que l'horloge avance vraiment.
+    relance.then(() => audioClock('retour au premier plan')).then((m) => {
+      if (back && m) { back.clock = { verdict: m.verdict, ratio: m.ratio }; save(); }
+      if (m?.verdict === 'zombie') log('Moteur audio figé : touche « Réactiver le son » (section 2)');
+    });
+  }
   renderWake();
 });
 window.addEventListener('pageshow', (e) => { if (e.persisted) log('Page restaurée depuis le cache'); });
@@ -1199,6 +1269,8 @@ async function guidedRun() {
     gShow(G.step, 'Lance ta musique sur Spotify, puis reviens ici.', 'On vérifie que l\'app ne la coupe pas.');
     G.answers.music = await gAsk(['Musique lancée', 'Je teste sans musique']);
     $('#spotify').checked = G.answers.music === 'Musique lancée';
+    if (G.answers.music === 'Musique lancée') await recreateAudio('retour de Spotify (test guidé)');
+    G.clockStart = await audioClock('début test guidé');
     if (!(await ensureAudio('test guidé'))) { gShow(G.step, 'Le son de l\'app est bloqué.', 'Touche « Réessayer ».'); await gAsk(['Réessayer']); await ensureAudio('test guidé'); }
     if (!clipBuf.n1) await loadClips();
 
@@ -1358,21 +1430,41 @@ async function duckRun() {
     if (!clipBuf.partez) await loadClips();
     gShow('Préparation', 'Lance ta musique sur Spotify, à ton volume habituel.', 'Puis reviens ici. Garde le téléphone en main, haut-parleur.');
     await gAsk(['Musique lancée']);
+    // Retour de Spotify : l'ancien moteur est probablement figé, on en crée un neuf dans ce geste.
+    run.recreated = await recreateAudio('retour de Spotify (test musique)');
+    run.clockStart = await audioClock('début test musique');
+    while (run.clockStart?.verdict !== 'sain') {
+      gShow('Préparation', 'Le son de l’app ne répond pas.', `Horloge audio : ${run.clockStart?.verdict ?? 'inconnue'}. Touche « Réparer le son ».`);
+      if ((await gAsk(['Réparer le son', 'Continuer quand même'])) !== 'Réparer le son') break;
+      await recreateAudio('réparation manuelle (test musique)');
+      run.clockStart = await audioClock('début test musique');
+    }
     for (const v of DUCK_VARIANTS) {
       gShow(v.label, 'Écoute bien ta musique pendant les annonces.', v.note);
       await gAsk([`Écouter la ${v.label.toLowerCase().replace(' sur 3', '')}`]);
       const before = sessionInfo();
+      if (audioZombie) await recreateAudio('avant variante ' + v.id);
       const okType = setSessionType(v.during);
       const audioOk = await ensureAudio('baisse musique ' + v.id);
+      let clockBefore = await audioClock('avant variante ' + v.id), repaired = false;
+      if (clockBefore?.verdict === 'zombie') {
+        gShow(v.label, 'Le son de l’app s’est figé.', 'Touche « Réparer le son » avant d’écouter.');
+        await gAsk(['Réparer le son']);
+        await recreateAudio('réparation avant variante ' + v.id); repaired = true;
+        clockBefore = await audioClock('avant variante ' + v.id);
+      }
       const during = sessionInfo();
       gShow(v.label, 'Écoute…', 'Départ, encouragement, repos.');
+      // Avance de l'horloge audio pendant la séquence : preuve que les sons programmés ont pu sortir.
+      const c0 = ctx, a0 = ctx.currentTime, w0 = now();
       if (audioOk) await duckSequence();
+      const seq = c0 === ctx ? { wallMs: Math.round(now() - w0), audioMs: Math.round((ctx.currentTime - a0) * 1000) } : null;
       if (v.after !== v.during) setSessionType(v.after);
       await gSleep(1500);
       const after = sessionInfo();
       gShow(v.label, 'Pendant les annonces, ta musique…', '');
       const answer = await gAsk(MUSIC_ANSWERS);
-      const rec = { variant: v.id, typeApplied: okType, sessionBefore: before, sessionDuring: during, sessionAfter: after, audioBefore: audioOk ? 'running' : ctx?.state, audioAfter: ctx?.state ?? null, answer };
+      const rec = { variant: v.id, typeApplied: okType, sessionBefore: before, sessionDuring: during, sessionAfter: after, audioBefore: audioOk ? 'running' : ctx?.state, audioAfter: ctx?.state ?? null, clockBefore, repaired, seq, answer };
       if (answer === 'Coupée, ne reprend pas' || answer === 'Coupée puis reprise seule') {
         gShow(v.label, 'Relance ta musique si besoin.', 'Puis reviens ici pour la suite.');
         await gAsk(['C’est fait']);
@@ -1415,11 +1507,12 @@ function buildReport() {
     `ÉLAN, rapport labo ${VERSION} (MediaPipe ${MP_VERSION})`,
     `${R.env.iphone}, iOS ${R.env.iosDeclared}, ${R.env.mode}`,
     ...R.duck.flatMap((d) => [
-      `— TEST BAISSE DE MUSIQUE (${d.status}), API audioSession ${d.sessionApi ? 'présente' : 'absente'}`,
-      ...d.variants.map((v) => `${v.variant} : « ${v.answer} » | type appliqué ${v.typeApplied ? 'oui' : 'NON'} (${v.sessionDuring.type}), état session ${v.sessionBefore.state ?? '—'} → ${v.sessionDuring.state ?? '—'} → ${v.sessionAfter.state ?? '—'}, moteur audio ${v.audioBefore} → ${v.audioAfter}`),
+      `— TEST BAISSE DE MUSIQUE (${d.status}), API audioSession ${d.sessionApi ? 'présente' : 'absente'}, moteur neuf au retour de Spotify : horloge ${d.clockStart ? `${d.clockStart.verdict} (ratio ${d.clockStart.ratio})` : '—'}`,
+      ...d.variants.map((v) => `${v.variant} : « ${v.answer} » | type appliqué ${v.typeApplied ? 'oui' : 'NON'} (${v.sessionDuring.type}), état session ${v.sessionBefore.state ?? '—'} → ${v.sessionDuring.state ?? '—'} → ${v.sessionAfter.state ?? '—'}, moteur audio ${v.audioBefore} → ${v.audioAfter}, horloge avant ${v.clockBefore?.verdict ?? '—'}${v.repaired ? ' (réparé)' : ''}, pendant séquence +${v.seq?.audioMs ?? '—'} ms / ${v.seq?.wallMs ?? '—'} ms`),
     ]),
     ...R.guided.flatMap((g) => [
       `— TEST GUIDÉ n° ${g.run} (${g.status})${g.coldFetch ? ' : modèle retéléchargé sans cache' : ' : après fermeture complète'}`,
+      `Horloge audio au départ : ${g.clockStart ? `${g.clockStart.verdict} (ratio ${g.clockStart.ratio})` : '—'}`,
       g.prep ? `Préparation : chargement ${g.prep.modelLoadMs} ms, prêt en ${g.prep.untilStableMs} ms, préchauffage ${g.prep.warmup?.frames} analyses (1re ${g.prep.warmup?.firstMs} ms, max ${g.prep.warmup?.maxMs} ms${g.prep.warmup?.ok ? '' : ', NON STABLE'}), écran figé max ${g.prep.screenFreezeMaxMs} ms, ${g.prep.delegate}` : 'Préparation : —',
       g.calibration ? `Calibration : ${g.calibration.failed ? 'échec' : `haut ${g.calibration.top} %, bas ${g.calibration.bottom} %`} (${g.calibration.tries} essai(s))` : 'Calibration : —',
       ...g.series.map((x) => `Série ${x.speed} : ${x.counted} comptées / ${x.real ?? '?'} réelles, ${x.invalidatedCycles} cycle(s) annulé(s), sans détection ${x.noDetectPct} %, analyse max ${x.detectMaxMs} ms`),
@@ -1430,7 +1523,8 @@ function buildReport() {
     ]),
     '— DÉTAIL DES AUTRES TESTS',
     'Note : les mesures audio portent sur la programmation des bips, pas sur l\'instant où le son est entendu.',
-    `Moteur audio : ${R.audio.stateChanges ?? 0} changements d'état, ${R.audio.resumes ?? 0} relances`,
+    `Moteur audio : ${R.audio.stateChanges ?? 0} changements d'état, ${R.audio.resumes ?? 0} relances, ${R.audio.recreations?.length ?? 0} recréations`,
+    `Horloge audio : ${(R.audio.clocks || []).slice(-8).map((c) => `${c.label} ${c.verdict} ${c.ratio}`).join(' ; ') || 'non mesurée'}`,
     ...R.audio.tests.map((t) => `Bips « ${t.test} » | ${t.session}, ${t.audioOutput}, ${t.ringSwitch}, Spotify ${yn(t.spotify)} | ${t.scheduled} programmés, ${t.dropped} abandonnés, blocage max ${t.maxLoopGapMs} ms | entendu : ${t.heard}`),
     R.clips.count ? `Clips : ${R.clips.count} chargés en ${R.clips.loadMs} ms (${R.clips.voice})` : 'Clips : non chargés',
     ...R.clips.tests.map((t) => `Clips « ${t.test} » | ${t.session}, ${t.audioOutput}, ${t.ringSwitch}, Spotify ${yn(t.spotify)} | joués ${t.played}, interrompus ${t.interrupted}, remplacés ${t.replaced}, écartés ${t.dropped}, annulés ${t.cancelled}${t.staleDropped != null ? `, périmés écartés ${t.staleDropped}, sons annulés au masquage ${t.cancelledOnHide}, masquage max ${t.maxHiddenS} s` : ''} | moteur ${t.audioState ?? '—'} | entendu : ${t.heard}`),
@@ -1439,7 +1533,7 @@ function buildReport() {
       ? `Série ${t.method} (${t.speed}, ${t.fps} fps, ${t.delegate}${t.repClips ? ', clips' : ''}) : ${t.counted}/${t.real}, ${t.invalidatedCycles} cycle(s) annulé(s), sans détection ${t.noDetectPct} %, analyse p95 ${t.detectMs.p95} ms (max ${t.detectMs.max}), préchauffage ${t.warmup ? `${t.warmup.frames} analyses, 1re ${t.warmup.firstMs} ms${t.warmup.ok ? '' : ' NON STABLE'}` : '—'}, réactivité p95 ${t.tapLatencyMs.p95 ?? '—'} ms`
       : `Immobile ${t.method} : ${t.inventedReps} inventée(s)`),
     R.wake ? `Veille : ${R.wake.endedAfterS ?? R.wake.elapsedS} s, écran allumé obtenu ${R.wake.acquired}× libéré ${R.wake.releases.length}×, extinction observée : ${R.wake.screenOffObserved == null ? 'non notée' : yn(R.wake.screenOffObserved)}` : 'Veille : non testée',
-    `Interruptions : ${R.interruptions.map((i) => `${i.hiddenS} s (mono−civile ${i.monoMinusWallMs} ms, audio ${i.audioStateOnReturn ?? '—'})`).join(' ; ') || 'aucune'}`,
+    `Interruptions : ${R.interruptions.map((i) => `${i.hiddenS} s (mono−civile ${i.monoMinusWallMs} ms, audio ${i.audioStateOnReturn ?? '—'}${i.clock ? `, horloge ${i.clock.verdict} ${i.clock.ratio}` : ''})`).join(' ; ') || 'aucune'}`,
     `Remarques : ${R.notes || '—'}`,
     '', 'Données complètes :', JSON.stringify({ ...R, log: R.log.slice(-60) }),
   ];
@@ -1454,6 +1548,8 @@ $('#shareReport').addEventListener('click', async () => {
   try { await navigator.share({ title: 'Rapport Élan labo', text }); }
   catch (e) { if (e.name !== 'AbortError') $('#reportMsg').textContent = 'Partage impossible : ' + e.message; }
 });
+// Accès pour le parcours automatique (tools/qa/lab.cjs), sans effet sur l'iPhone.
+window.__labo = { get ctx() { return ctx; }, R, buildReport };
 log('Labo prêt, version ' + VERSION);
 </script>
 </body>
