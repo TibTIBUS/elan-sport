@@ -1,0 +1,10 @@
+{
+  "name": "Élan labo",
+  "short_name": "Élan labo",
+  "lang": "fr",
+  "start_url": "./lab.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#15202b",
+  "theme_color": "#15202b"
+}
