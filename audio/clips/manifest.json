@@ -10,12 +10,12 @@
     "n1": {
       "text": "Un.",
       "file": "n1.mp3",
-      "durationS": 0.42
+      "durationS": 0.37
     },
     "n2": {
       "text": "Deux.",
       "file": "n2.mp3",
-      "durationS": 0.39
+      "durationS": 0.37
     },
     "n3": {
       "text": "Trois.",
@@ -30,7 +30,7 @@
     "n5": {
       "text": "Cinq.",
       "file": "n5.mp3",
-      "durationS": 0.5
+      "durationS": 0.52
     },
     "n6": {
       "text": "Six.",
@@ -40,47 +40,67 @@
     "n7": {
       "text": "Sept.",
       "file": "n7.mp3",
-      "durationS": 0.52
+      "durationS": 0.47
     },
     "n8": {
       "text": "Huit.",
       "file": "n8.mp3",
-      "durationS": 0.5
+      "durationS": 0.44
     },
     "n9": {
       "text": "Neuf.",
       "file": "n9.mp3",
-      "durationS": 0.47
+      "durationS": 0.52
     },
     "n10": {
       "text": "Dix.",
       "file": "n10.mp3",
-      "durationS": 0.47
+      "durationS": 0.5
     },
     "partez": {
       "text": "Partez !",
       "file": "partez.mp3",
-      "durationS": 0.55
+      "durationS": 0.6
     },
     "repos": {
       "text": "Repos.",
       "file": "repos.mp3",
-      "durationS": 0.63
+      "durationS": 0.65
     },
     "fin": {
       "text": "Séance terminée.",
       "file": "fin.mp3",
-      "durationS": 0.97
+      "durationS": 0.91
     },
     "enc1": {
       "text": "Allez, tu y es presque !",
       "file": "enc1.mp3",
-      "durationS": 1.65
+      "durationS": 1.52
     },
     "enc2": {
       "text": "Dernière série, on lâche rien !",
       "file": "enc2.mp3",
-      "durationS": 2.06
+      "durationS": 2.22
+    },
+    "haut": {
+      "text": "Position haute. Ne bouge plus.",
+      "file": "haut.mp3",
+      "durationS": 2.27
+    },
+    "bas": {
+      "text": "Position basse. Tiens-la.",
+      "file": "bas.mp3",
+      "durationS": 1.78
+    },
+    "calok": {
+      "text": "Calibration terminée.",
+      "file": "calok.mp3",
+      "durationS": 1.31
+    },
+    "calko": {
+      "text": "Calibration ratée, recommence.",
+      "file": "calko.mp3",
+      "durationS": 2.09
     }
   }
 }
