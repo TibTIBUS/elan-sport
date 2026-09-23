@@ -18,7 +18,7 @@ Pré-décompte une fois (0/3/5/10 dans l'UI), avant l'effort. Les avertissements
 
 Au masquage : invalidation audio, snapshot mono/wall/logique, sauvegarde et relâchement du Wake Lock. Les minuteurs continuent selon l'horloge civile ; aucun son garanti en arrière-plan. Au retour : reconstitution directe de la phase en cours, sans émettre toutes les phases manquées. Une pause volontaire n'avance jamais. L'écart mono/wall normal d'une veille ne constitue pas une anomalie. Recul civil ou retard civil supérieur à 2 s par rapport au delta monotone : pause et message. Un saut civil en avant pendant veille est indiscernable d'une absence réelle ; aucune garantie d'exactitude dans ce cas. Après reconstitution, nouvelles références mono/wall.
 
-Après rechargement, restaurer le brouillon sur demande, recalculer les durées puis attendre une reprise explicite si non terminé. Une séance expirée affiche son résultat. Le brouillon est sauvé aux actions, au masquage et chaque seconde d'activité ; un arrêt forcé peut perdre jusqu'à environ une seconde de progrès non sauvegardé.
+Après rechargement, restaurer le brouillon sur demande, recalculer les durées puis attendre une reprise explicite si non terminé. Une séance expirée affiche son résultat. La restauration initialise silencieusement puis émet uniquement run:snapshot {recovered:true}, avec le runId sauvegardé, sans faux départ ni flash. Le brouillon est sauvé aux actions, au masquage et chaque seconde d'activité ; un arrêt forcé peut perdre jusqu'à environ une seconde de progrès non sauvegardé.
 
 Futur caméra : préparation non chronométrée incluant chargement, plusieurs vraies images sans comptage, stabilisation, calibration, puis décompte de placement. Toute interruption invalide le cycle et impose une détection stable. Une phase de répétitions n'a aucune échéance prévisible et ne peut jamais être sautée par reconstruction civile.
 
@@ -31,7 +31,7 @@ Futur caméra : préparation non chronométrée incluant chargement, plusieurs v
 - phase:start {phase}, phase:end {phaseId}
 - rep:changed {count, delta, origin:manual|correction} ; caméra ajouté ultérieurement
 - lap {lap:{index, atMs, durationMs}}
-- schedule:invalidated {reason:start|pause|resume|hidden|foreground|finished|stop|restored}
+- schedule:invalidated {reason:start|pause|resume|hidden|foreground|finished|stop}
 - run:snapshot {snapshot, recovered:true}
 
 **Décision d'implémentation** : le calendrier est exposé par la fonction pure `schedule(horizonMs)` plutôt que par un événement périodique schedule:updated. C'est toujours le moteur qui possède les échéances ; l'adaptateur audio lit ce contrat sans reconstruire les modes. Retour `{revision, signals:[{id,kind,phaseId,dueMonoMs,number?}]}`. kind = precount/start/rest/warning/interval/finish. Horizon par défaut 2 s, peut traverser plusieurs phases. Tolérance de livraison immédiate 80 ms ; événements plus anciens exclus. Le consommateur déduplique par ID et révision. Les signaux non prévisibles (objectif caméra) seront immédiats et soumis à expiration.
@@ -44,7 +44,7 @@ Un seul AudioContext, ambient si disponible. Clips existants locaux au repo et b
 
 Horloge audio indépendante : conversion depuis mono à chaque programmation. État non running = annulation des sources et déduplication réinitialisée. ensure() seulement à un démarrage/reprise volontaire, bouton Réactiver et retour au premier plan si séance running. Pas de relance sur pause/arrêt/+1. Une tentative concurrente au maximum, attente UI bornée à 1,5 s. Running indique que le contexte fonctionne, jamais que l'utilisateur entend le son. Mode silencieux iPhone : ambient peut rester muet.
 
-Pause/stop/hide : annuler les sources déjà programmées (pas seulement les setInterval). Reprise : calendrier frais, aucun rattrapage sonore. Fin naturelle : laisser finir le signal terminal déjà programmé. Bips 100 ms avant les clips de phase (320 ms pour fin), clips fixes courts. À l'intégration d'encouragements/comptage : bip/phase > objectif > nombre > encouragement ; annulations, expiration des nombres, pas de file accumulée. La clarté des nombres rapides et la priorité de la banque actuelle ne sont PAS encore validées au labo 0.0.6.
+Pause/stop/hide : annuler les sources déjà programmées (pas seulement les setInterval). Reprise : calendrier frais, aucun rattrapage sonore. Fin naturelle : laisser finir le signal terminal déjà programmé. Départ : double bip aigu à 1320 Hz ; repos : bip grave à 440 Hz. Clips après le signal : 200 ms au départ, 100 ms au repos/pré-décompte, 320 ms en fin. Les deux impulsions de départ sont annulables. À l'intégration d'encouragements/comptage : bip/phase > objectif > nombre > encouragement ; annulations, expiration des nombres, pas de file accumulée. La clarté des nombres rapides et la priorité de la banque actuelle ne sont PAS encore validées au labo 0.0.6.
 
 ## Données locales
 
@@ -64,4 +64,7 @@ Import : hors séance active uniquement, remplacement complet avec confirmation,
 
 ## Validation
 
-Tests Node par horloge injectée (voir tests/). Parcours automatisés prévus dans Chromium (workflow de PR) : cela ne remplace pas le test Safari/iPhone, Spotify et l'écoute. Aucun test de ce checkout ne prétend valider l'audio audible à ±50 ms. Relecture indépendante Claude encore à faire ; pas de fusion automatique sur main dans cette étape.
+Tests Node par horloge injectée (voir tests/). Parcours automatisés prévus dans Chromium (workflow de PR) : cela ne remplace pas le test Safari/iPhone, Spotify et l'écoute. Aucun test de ce checkout ne prétend valider l'audio audible à ±50 ms. Relecture Claude transmise par Thibaut : aucun blocage, 25 tests et parcours Chromium validés avant les deux corrections mineures. Corrections couvertes par deux tests supplémentaires. Les six simulations décrites par Claude restent à intégrer depuis son fichier ; elles ne sont pas incluses dans ce décompte.
+
+### Précautions pour l’étape caméra
+Après getUserMedia et préparation, proposer un bouton « Je suis prêt » dont le gestionnaire appelle audio.ensure() directement sur le geste, avant de lancer le décompte. Revérifier l’état audio après les opérations asynchrones ; indicateur et réactivation explicite si nécessaire. Cette précaution ne constitue pas un diagnostic confirmé des anomalies du labo. Le journal 0.0.6 fourni ne contient pas de ligne « Moteur audio … avant caméra » établissant un échec de resume ; il ne permet pas de conclure sur la cause. La calibration 22 → 24,4 % reste une faible amplitude, à surveiller.

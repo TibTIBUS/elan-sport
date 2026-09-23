@@ -45,9 +45,14 @@ export class AudioEngine {
     return source;
   }
   beep(when, kind = 'interval') {
+    if (kind === 'start') {
+      this.tone(when, 1320, 0.06); this.tone(when + 0.12, 1320, 0.06); return;
+    }
+    this.tone(when, kind === 'rest' ? 440 : kind === 'finish' ? 1046 : kind === 'warning' ? 660 : 880, kind === 'finish' ? 0.3 : 0.08);
+  }
+  tone(when, frequency, duration) {
     const o = this.ctx.createOscillator(), g = this.ctx.createGain();
-    const duration = kind === 'finish' ? 0.3 : 0.08;
-    o.frequency.value = kind === 'finish' ? 1046 : kind === 'warning' ? 660 : 880;
+    o.frequency.value = frequency;
     g.gain.setValueAtTime(0.0001, when); g.gain.exponentialRampToValueAtTime(this.settings.gym ? 0.12 : 0.35, when + 0.008);
     g.gain.exponentialRampToValueAtTime(0.0001, when + duration);
     o.connect(g).connect(this.master); this.track(o, g); o.start(when); o.stop(when + duration + 0.01);
@@ -66,9 +71,9 @@ export class AudioEngine {
       this.seen.set(cue.id, cue.dueMonoMs);
       const when = this.ctx.currentTime + Math.max(0.005, (cue.dueMonoMs - monoNow) / 1000);
       this.beep(when, cue.kind);
-      // Short fixed clips fit inside their slots; the bip has the first 100 ms.
+      // Leave room for the complete cue, including both start pulses.
       const id = { start: 'partez', rest: 'repos', finish: 'fin', precount: `n${cue.number}` }[cue.kind];
-      if (id) this.clip(id, when + (cue.kind === 'finish' ? 0.32 : 0.1));
+      if (id) this.clip(id, when + (cue.kind === 'finish' ? 0.32 : cue.kind === 'start' ? 0.2 : 0.1));
     }
   }
   cancel() {

@@ -52,14 +52,17 @@ export class TimerEngine {
     for (const fn of this.listeners) fn(e);
   }
   invalidate(reason) { this.revision++; this.emit('schedule:invalidated', { reason }); }
-  start(input) {
+  initialize(input) {
     if (['running', 'paused'].includes(this.status)) throw new Error('Une activité est déjà en cours.');
     this.config = normalizeConfig(input); this.phases = buildPhases(this.config);
     this.runId = `${this.clock.wall()}-${Math.random().toString(36).slice(2, 10)}`;
     this.startedAt = this.clock.wall(); this.endedAt = null; this.status = 'running';
     this.baseMs = 0; this.anchorMono = this.clock.mono(); this.anchorWall = this.clock.wall();
     this.reps = 0; this.laps = []; this.corrections = []; this.hidden = null; this.anomaly = null;
-    this.phaseId = this.phases[0].id; this.invalidate('start');
+    this.phaseId = this.phases[0].id;
+  }
+  start(input) {
+    this.initialize(input); this.invalidate('start');
     this.emit('run:start', { config: { ...this.config } });
     this.emit('phase:start', { phase: this.phases[0] });
     return this.snapshot();
@@ -185,15 +188,20 @@ export class TimerEngine {
   }
   restore(data) {
     if (data?.schemaVersion !== 1 || !['running', 'paused'].includes(data.status) || !Number.isFinite(data.elapsedMs) || data.elapsedMs < 0 || !Number.isFinite(data.savedAt)) throw new Error('Séance sauvegardée invalide.');
-    this.start(data.config); this.runId = data.runId; this.startedAt = data.startedAt;
+    this.initialize(data.config); this.runId = data.runId; this.startedAt = data.startedAt;
     this.reps = Number.isInteger(data.reps) && data.reps >= 0 ? data.reps : 0;
     this.laps = Array.isArray(data.laps) ? data.laps.filter(l => Number.isFinite(l.atMs) && Number.isFinite(l.durationMs) && l.durationMs >= 0) : [];
     this.corrections = Array.isArray(data.corrections) ? data.corrections : [];
     this.baseMs = data.elapsedMs; this.status = data.status;
     if (data.status === 'running') this.reconcile(data.elapsedMs, this.clock.wall() - data.savedAt);
-    this.tick();
-    // Explicit user action is required to resume an unfinished recovered activity.
-    if (this.status === 'running') this.pause();
-    this.invalidate('restored'); return this.snapshot();
+    // Reconstruct silently: subscribers must never see a new run or a transient phase.
+    this.baseMs = Math.min(this.elapsed(), this.totalMs);
+    this.status = this.baseMs >= this.totalMs ? 'finished' : 'paused';
+    if (this.status === 'finished') this.endedAt = this.clock.wall();
+    this.phaseId = this.snapshot().phase.id;
+    this.revision++;
+    const snapshot = this.snapshot();
+    this.emit('run:snapshot', { snapshot, recovered: true });
+    return snapshot;
   }
 }

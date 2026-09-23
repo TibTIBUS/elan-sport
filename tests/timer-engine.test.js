@@ -105,3 +105,17 @@ test('invalid inputs are rejected before creating a run', () => {
 test('a second start cannot overwrite an active session', () => {
   const { engine } = setup(); assert.throws(() => engine.start({ mode: 'chrono' }));
 });
+test('restore emits only a recovered snapshot with the original run ID', () => {
+  for (const delay of [5000, 700000]) {
+    const { engine, advance, clock } = setup();
+    const saved = engine.checkpoint(); advance(delay);
+    const restored = new TimerEngine(clock), events = [];
+    restored.subscribe(e => events.push(e));
+    const snapshot = restored.restore(saved);
+    assert.deepEqual(events.map(e => e.type), ['run:snapshot']);
+    assert.equal(events[0].runId, saved.runId);
+    assert.equal(events[0].recovered, true);
+    assert.equal(snapshot.status, delay > 600000 ? 'finished' : 'paused');
+    assert.equal(restored.phaseId, snapshot.phase.id);
+  }
+});

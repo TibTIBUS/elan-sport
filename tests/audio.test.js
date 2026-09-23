@@ -48,3 +48,10 @@ test('audio test starts only after loading and aborts if context was suspended',
   ctx.state = 'suspended'; finishLoading();
   assert.equal(await pendingTest, false); assert.equal(sources.length, 0);
 });
+test('gym start is a high double pulse, rest a low pulse, and pause cancels all', () => {
+  const { audio, sources } = fixture(); audio.configure({ gym: true });
+  audio.beep(2, 'start'); audio.beep(4, 'rest');
+  assert.deepEqual(sources.map(s => s.frequency.value), [1320, 1320, 440]);
+  assert.deepEqual(sources.map(s => s.when), [2, 2.12, 4]);
+  audio.cancel(); assert.ok(sources.every(s => s.stopped));
+});
