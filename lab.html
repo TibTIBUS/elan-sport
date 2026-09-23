@@ -84,7 +84,9 @@ pre{white-space:pre-wrap;background:var(--surface);border-radius:10px;padding:12
   <p>Étape 0 : mesurer ce que ton iPhone permet vraiment avant d'écrire l'app. Version <span id="ver"></span>.</p>
   <div class="banner" id="modeBanner" hidden>Tu es dans Safari. Pour les vrais tests : bouton Partager, « Sur l'écran d'accueil », puis ouvre Élan labo depuis l'icône.</div>
   <p class="help" id="restoreMsg" style="margin-top:12px"></p>
-  <button class="primary guideStart" id="guideStart">Lancer le test guidé</button>
+  <button class="primary guideStart" id="duckStart">Test : baisser la musique</button>
+  <p class="help">5 minutes, avec Spotify. On essaie 3 façons de jouer les annonces et tu dis ce que fait ta musique.</p>
+  <button class="guideStart" id="guideStart">Lancer le test guidé</button>
   <p class="help" id="guideInfo">Environ 10 minutes. Suis simplement les consignes. Pour mesurer le démarrage à froid, lance-le juste après avoir ouvert l'app.</p>
   <p class="help">Les sections ci-dessous servent aux tests détaillés : tu n'en as pas besoin.</p>
 </header>
@@ -229,7 +231,7 @@ pre{white-space:pre-wrap;background:var(--surface);border-radius:10px;padding:12
 </main>
 
 <script type="module">
-const VERSION = '0.0.6-labo';
+const VERSION = '0.0.7-labo';
 const MP_VERSION = '1.0.1';
 const MP_BASE = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VERSION}`;
 const MODELS = {
@@ -251,7 +253,7 @@ const pct = (arr, q) => { if (!arr.length) return null; const a = [...arr].sort(
 const r1 = (x) => x == null || !isFinite(x) ? null : Math.round(x * 10) / 10;
 const dl = (el, obj) => { el.innerHTML = Object.entries(obj).map(([k, v]) => `<dt>${k}</dt><dd>${v ?? '—'}</dd>`).join(''); };
 
-const R = { version: VERSION, mediapipe: MP_VERSION, openedAt: new Date().toISOString(), env: {}, audio: { tests: [] }, voice: { available: [], tests: [] }, clips: { tests: [] }, guided: [], wake: null, interruptions: [], camera: { trials: [], minuteLog: [] }, log: [] };
+const R = { version: VERSION, mediapipe: MP_VERSION, openedAt: new Date().toISOString(), env: {}, audio: { tests: [] }, voice: { available: [], tests: [] }, clips: { tests: [] }, guided: [], duck: [], wake: null, interruptions: [], camera: { trials: [], minuteLog: [] }, log: [] };
 function log(msg) {
   R.log.push(`${new Date().toLocaleTimeString('fr-FR')}  ${msg}`);
   if (R.log.length > 200) R.log.splice(0, 50);
@@ -278,7 +280,7 @@ function saveNow() {
     form.spotify = $('#spotify').checked;
     localStorage.setItem(STORE, JSON.stringify({
       savedAt: new Date().toISOString(), version: VERSION, form,
-      audio: R.audio.tests, voice: R.voice.tests, clips: R.clips.tests, guided: R.guided, interruptions: R.interruptions,
+      audio: R.audio.tests, voice: R.voice.tests, clips: R.clips.tests, guided: R.guided, duck: R.duck, interruptions: R.interruptions,
       wake: R.wake ? { ...R.wake, running: false } : null,
       camera: { trials: R.camera.trials, minuteLog: R.camera.minuteLog },
       log: R.log.slice(-80),
@@ -290,7 +292,7 @@ function restore() {
   try { d = JSON.parse(localStorage.getItem(STORE) || 'null'); } catch { d = null; }
   if (!d) return;
   for (const [id, v] of Object.entries(d.form || {})) { if (id === 'spotify') $('#spotify').checked = v; else if ($('#' + id) && v != null) $('#' + id).value = v; }
-  R.audio.tests = d.audio || []; R.voice.tests = d.voice || []; R.clips.tests = d.clips || []; R.guided = d.guided || []; R.interruptions = d.interruptions || [];
+  R.audio.tests = d.audio || []; R.voice.tests = d.voice || []; R.clips.tests = d.clips || []; R.guided = d.guided || []; R.duck = d.duck || []; R.interruptions = d.interruptions || [];
   R.wake = d.wake; R.camera.trials = d.camera?.trials || []; R.camera.minuteLog = d.camera?.minuteLog || [];
   R.log = d.log || [];
   const n = R.audio.tests.length + R.voice.tests.length + R.clips.tests.length + R.camera.trials.length;
@@ -1324,6 +1326,85 @@ $('#gAbort').addEventListener('click', () => { if (G && confirm('Abandonner le t
     : `Essai n° ${runs + 1} : ferme d'abord complètement l'app (balayage vers le haut), rouvre-la, puis lance le test tout de suite.`;
 }
 
+/* ---------- Test : baisser la musique pendant les annonces ---------- */
+// Trois variantes du type de session audio, jouées par-dessus Spotify. Ambient d'abord (référence),
+// transient ensuite, transient-solo en dernier car il peut mettre la musique en pause.
+const DUCK_VARIANTS = [
+  { id: 'ambient', label: 'Variante 1 sur 3', note: 'La référence : ce que fait l’app aujourd’hui.', during: 'ambient', after: 'ambient' },
+  { id: 'transient', label: 'Variante 2 sur 3', note: 'Type « transient » gardé pendant toute la séquence.', during: 'transient', after: 'transient' },
+  { id: 'transient-solo', label: 'Variante 3 sur 3', note: 'Type « transient-solo » seulement pendant les annonces, puis retour à ambient.', during: 'transient-solo', after: 'ambient' },
+];
+const MUSIC_ANSWERS = ['Elle a baissé puis est remontée', 'Elle n’a pas changé', 'Coupée puis reprise seule', 'Coupée, ne reprend pas', 'Je n’ai rien entendu de l’app'];
+const sessionInfo = () => ('audioSession' in navigator ? { type: navigator.audioSession.type, state: navigator.audioSession.state ?? null } : { type: 'non supporté', state: null });
+function setSessionType(t) {
+  if (!('audioSession' in navigator)) return false;
+  try { navigator.audioSession.type = t; return navigator.audioSession.type === t; } catch (e) { log('audioSession ' + t + ' : ' + e.message); return false; }
+}
+// Séquence d'annonces : double bip + « Partez », encouragement, bip grave + « Repos » (~8 s).
+async function duckSequence() {
+  const t = ctx.currentTime + 0.3;
+  beep(t, 1320, 0.06); beep(t + 0.12, 1320, 0.06); playClip('partez', PRIO.signal, t + 0.2);
+  playClip('enc1', PRIO.encouragement, t + 2.4);
+  beep(t + 5.6, 440, 0.1); playClip('repos', PRIO.signal, t + 5.8);
+  await gSleep(7200);
+}
+async function duckRun() {
+  G = { duck: true, aborted: false };
+  $('#guide').hidden = false;
+  const run = { id: uid(), startedAt: new Date().toISOString(), variants: [], sessionApi: 'audioSession' in navigator };
+  try {
+    $('#session').value = 'ambient';
+    await unlockAudio();
+    if (!clipBuf.partez) await loadClips();
+    gShow('Préparation', 'Lance ta musique sur Spotify, à ton volume habituel.', 'Puis reviens ici. Garde le téléphone en main, haut-parleur.');
+    await gAsk(['Musique lancée']);
+    for (const v of DUCK_VARIANTS) {
+      gShow(v.label, 'Écoute bien ta musique pendant les annonces.', v.note);
+      await gAsk([`Écouter la ${v.label.toLowerCase().replace(' sur 3', '')}`]);
+      const before = sessionInfo();
+      const okType = setSessionType(v.during);
+      const audioOk = await ensureAudio('baisse musique ' + v.id);
+      const during = sessionInfo();
+      gShow(v.label, 'Écoute…', 'Départ, encouragement, repos.');
+      if (audioOk) await duckSequence();
+      if (v.after !== v.during) setSessionType(v.after);
+      await gSleep(1500);
+      const after = sessionInfo();
+      gShow(v.label, 'Pendant les annonces, ta musique…', '');
+      const answer = await gAsk(MUSIC_ANSWERS);
+      const rec = { variant: v.id, typeApplied: okType, sessionBefore: before, sessionDuring: during, sessionAfter: after, audioBefore: audioOk ? 'running' : ctx?.state, audioAfter: ctx?.state ?? null, answer };
+      if (answer === 'Coupée, ne reprend pas' || answer === 'Coupée puis reprise seule') {
+        gShow(v.label, 'Relance ta musique si besoin.', 'Puis reviens ici pour la suite.');
+        await gAsk(['C’est fait']);
+      }
+      run.variants.push(rec);
+      log(`Baisse musique ${v.id} : ${answer} (type ${during.type}, état ${during.state ?? '—'})`);
+    }
+    setSessionType('ambient');
+    run.status = 'terminé';
+  } catch (e) {
+    run.status = e instanceof Abort ? 'abandonné' : 'erreur : ' + (e.message || e);
+    setSessionType('ambient');
+  }
+  run.endedAt = new Date().toISOString();
+  R.duck.push(run); saveNow();
+  gShow('Fin', run.status === 'terminé' ? 'Merci, c’est terminé !' : `Test ${run.status}.`, 'Copie le résultat et colle-le dans la conversation.');
+  const a = await new Promise((resolve) => {
+    const box = $('#gBtns'); box.innerHTML = '';
+    for (const [label, cls] of [['Copier le résultat', 'primary'], ['Fermer', '']]) {
+      const b = document.createElement('button'); b.textContent = label; b.className = cls;
+      b.addEventListener('click', () => resolve(label)); box.appendChild(b);
+    }
+  });
+  if (a === 'Copier le résultat') {
+    try { await navigator.clipboard.writeText(buildReport()); gShow('Fin', 'Copié.', 'Colle-le dans la conversation.'); }
+    catch { gShow('Fin', 'Copie impossible.', 'Utilise « Partager le rapport » en bas de la page.'); }
+    await sleep(1500);
+  }
+  $('#guide').hidden = true; G = null;
+}
+$('#duckStart').addEventListener('click', () => { if (!G) duckRun(); });
+
 /* ---------- 7. Rapport ---------- */
 function buildReport() {
   Object.assign(R.env, { iphone: $('#model').value || 'non renseigné', iosDeclared: $('#iosManual').value || 'non renseignée' });
@@ -1333,6 +1414,10 @@ function buildReport() {
   const lines = [
     `ÉLAN, rapport labo ${VERSION} (MediaPipe ${MP_VERSION})`,
     `${R.env.iphone}, iOS ${R.env.iosDeclared}, ${R.env.mode}`,
+    ...R.duck.flatMap((d) => [
+      `— TEST BAISSE DE MUSIQUE (${d.status}), API audioSession ${d.sessionApi ? 'présente' : 'absente'}`,
+      ...d.variants.map((v) => `${v.variant} : « ${v.answer} » | type appliqué ${v.typeApplied ? 'oui' : 'NON'} (${v.sessionDuring.type}), état session ${v.sessionBefore.state ?? '—'} → ${v.sessionDuring.state ?? '—'} → ${v.sessionAfter.state ?? '—'}, moteur audio ${v.audioBefore} → ${v.audioAfter}`),
+    ]),
     ...R.guided.flatMap((g) => [
       `— TEST GUIDÉ n° ${g.run} (${g.status})${g.coldFetch ? ' : modèle retéléchargé sans cache' : ' : après fermeture complète'}`,
       g.prep ? `Préparation : chargement ${g.prep.modelLoadMs} ms, prêt en ${g.prep.untilStableMs} ms, préchauffage ${g.prep.warmup?.frames} analyses (1re ${g.prep.warmup?.firstMs} ms, max ${g.prep.warmup?.maxMs} ms${g.prep.warmup?.ok ? '' : ', NON STABLE'}), écran figé max ${g.prep.screenFreezeMaxMs} ms, ${g.prep.delegate}` : 'Préparation : —',
