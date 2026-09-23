@@ -41,6 +41,9 @@ function show(which) {
   for (const name of ['home', 'session', 'summary']) $('#' + name).hidden = name !== which;
   document.body.classList.toggle('in-session', which === 'session');
   $('#settings-open').disabled = which === 'session';
+  $('#bottom-nav').hidden = which === 'session';
+  $('#nav-home').setAttribute('aria-current', which === 'home' ? 'page' : 'false');
+  $('#nav-timers').setAttribute('aria-current', 'false');
   if (which !== 'session') document.body.classList.remove('resting');
   window.scrollTo({ top: 0, behavior: 'instant' });
 }
@@ -181,6 +184,13 @@ const form = $('#settings-form');
 function fillSettings() { for (const [key, value] of Object.entries(settings)) { const el = form.elements[key]; if (el) { if (el.type === 'checkbox') el.checked = Boolean(value); else el.value = value; } } }
 function readSettingsForm() { return { precountSec: +form.elements.precountSec.value, intervalSec: +form.elements.intervalSec.value, sound: form.elements.sound.checked, voice: form.elements.voice.checked, warning3: form.elements.warning3.checked, volume: +form.elements.volume.value, gym: form.elements.gym.checked }; }
 $('#settings-open').addEventListener('click', () => { fillSettings(); text('#audio-test-status', ''); $('#settings').showModal(); });
+$('#nav-settings').addEventListener('click', () => $('#settings-open').click());
+$('#nav-home').addEventListener('click', () => { audio.cancel(); show('home'); renderSetup(); });
+$('#nav-timers').addEventListener('click', () => {
+  audio.cancel(); show('home'); renderSetup();
+  $('#nav-home').setAttribute('aria-current', 'false'); $('#nav-timers').setAttribute('aria-current', 'location');
+  $('#setup').scrollIntoView({ block: 'start', behavior: 'instant' }); $('#setup').focus({ preventScroll: true });
+});
 $('#settings-close').addEventListener('click', () => $('#settings').close());
 $('#settings').addEventListener('close', () => { audio.cancel(); audio.configure(settings); });
 form.addEventListener('submit', e => { e.preventDefault(); settings = readSettingsForm(); write('settings', { schemaVersion: 1, ...settings }); audio.configure(settings); settingsMeta(); $('#settings').close(); });

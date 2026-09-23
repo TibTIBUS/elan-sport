@@ -2,8 +2,9 @@
 
 Application personnelle pour le sport du matin. HTML, CSS et JavaScript en modules, sans build ni compte. GitHub Pages, chemins relatifs compatibles avec `/elan-sport/`.
 
-## Version 0.1.0 — première application
+## Version 0.1.1 — interface inspirée du kit Figma
 
+- Palette anthracite/citron/violet, typographies Poppins et League Spartan, cartes et navigation inférieure. Navigation masquée pendant l’effort ; repos identifié en lavande.
 - Chronomètre avec tours (meilleur et plus long).
 - Compte à rebours et durées rapides.
 - Intervalles, Tabata 20/10 × 8, repos final optionnel.
