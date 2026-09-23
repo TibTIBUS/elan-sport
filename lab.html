@@ -232,7 +232,7 @@ pre{white-space:pre-wrap;background:var(--surface);border-radius:10px;padding:12
 </main>
 
 <script type="module">
-const VERSION = '0.0.8-labo';
+const VERSION = '0.0.9-labo';
 const MP_VERSION = '1.0.1';
 const MP_BASE = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VERSION}`;
 const MODELS = {
@@ -1206,13 +1206,15 @@ function gShow(step, title, sub = '', count = '') {
   $('#gStep').textContent = step; $('#gTitle').textContent = title; $('#gSub').textContent = sub;
   $('#gCount').textContent = count; $('#gBtns').innerHTML = '';
 }
-function gAsk(options) {
+// onGesture s'exécute DANS le clic, avant resolve : c'est là que tout (re)démarrage audio doit commencer,
+// jamais seulement dans la suite de « await gAsk() » (iOS peut ne plus y voir le geste).
+function gAsk(options, onGesture) {
   return new Promise((resolve, reject) => {
     const box = $('#gBtns'); box.innerHTML = '';
     options.forEach((label, i) => {
       const b = document.createElement('button');
       b.textContent = label; if (i === 0) b.className = 'primary';
-      b.addEventListener('click', () => resolve(label));
+      b.addEventListener('click', () => { try { onGesture?.(label); resolve(label); } catch (e) { reject(e); } });
       box.appendChild(b);
     });
     G.reject = reject;
@@ -1267,11 +1269,16 @@ async function guidedRun() {
     $('#session').value = 'ambient';
     await unlockAudio();
     gShow(G.step, 'Lance ta musique sur Spotify, puis reviens ici.', 'On vérifie que l\'app ne la coupe pas.');
-    G.answers.music = await gAsk(['Musique lancée', 'Je teste sans musique']);
+    let audioP = null;
+    G.answers.music = await gAsk(['Musique lancée', 'Je teste sans musique'], (a) => { audioP = a === 'Musique lancée' ? recreateAudio('retour de Spotify (test guidé)') : ensureAudio('test guidé'); });
+    await audioP;
     $('#spotify').checked = G.answers.music === 'Musique lancée';
-    if (G.answers.music === 'Musique lancée') await recreateAudio('retour de Spotify (test guidé)');
     G.clockStart = await audioClock('début test guidé');
-    if (!(await ensureAudio('test guidé'))) { gShow(G.step, 'Le son de l\'app est bloqué.', 'Touche « Réessayer ».'); await gAsk(['Réessayer']); await ensureAudio('test guidé'); }
+    if (G.clockStart?.verdict !== 'sain') {
+      gShow(G.step, 'Le son de l\'app est bloqué.', 'Touche « Réparer le son ».');
+      await gAsk(['Réparer le son'], () => { audioP = recreateAudio('réparation (test guidé)'); });
+      await audioP; G.clockStart = await audioClock('début test guidé');
+    }
     if (!clipBuf.n1) await loadClips();
 
     // 2. Préparation caméra (démarrage à froid mesuré)
@@ -1296,7 +1303,9 @@ async function guidedRun() {
     G.step = 'Étape 3 sur 6 · Calibration';
     for (let tries = 1; ; tries++) {
       gShow(G.step, 'Pose le téléphone à plat au sol, devant ta tête, entre tes mains.', 'Mets-toi en position de pompe, bras tendus. La voix te guide : tiens chaque position jusqu\'au bip aigu.');
-      await gAsk(['Je suis prêt']);
+      let calP = null;
+      await gAsk(['Je suis prêt'], () => { calP = ensureAudio('calibration'); });
+      await calP;
       gShow(G.step, 'Écoute la voix…', 'Haut, puis bas.');
       if (await runCalibration()) { G.calibration = { tries, top: r1(C.top * 100), bottom: r1(C.bottom * 100) }; break; }
       gShow(G.step, 'Calibration ratée.', 'Vérifie que ton visage est bien visible, puis recommence.');
@@ -1429,28 +1438,30 @@ async function duckRun() {
     await unlockAudio();
     if (!clipBuf.partez) await loadClips();
     gShow('Préparation', 'Lance ta musique sur Spotify, à ton volume habituel.', 'Puis reviens ici. Garde le téléphone en main, haut-parleur.');
-    await gAsk(['Musique lancée']);
-    // Retour de Spotify : l'ancien moteur est probablement figé, on en crée un neuf dans ce geste.
-    run.recreated = await recreateAudio('retour de Spotify (test musique)');
+    // Retour de Spotify : l'ancien moteur est probablement figé, on en crée un neuf DANS le clic.
+    let audioP = null;
+    await gAsk(['Musique lancée'], () => { audioP = recreateAudio('retour de Spotify (test musique)'); });
+    run.recreated = await audioP;
     run.clockStart = await audioClock('début test musique');
     while (run.clockStart?.verdict !== 'sain') {
       gShow('Préparation', 'Le son de l’app ne répond pas.', `Horloge audio : ${run.clockStart?.verdict ?? 'inconnue'}. Touche « Réparer le son ».`);
-      if ((await gAsk(['Réparer le son', 'Continuer quand même'])) !== 'Réparer le son') break;
-      await recreateAudio('réparation manuelle (test musique)');
+      audioP = null;
+      await gAsk(['Réparer le son', 'Continuer quand même'], (a) => { if (a === 'Réparer le son') audioP = recreateAudio('réparation manuelle (test musique)'); });
+      if (!audioP) break;
+      await audioP;
       run.clockStart = await audioClock('début test musique');
     }
     for (const v of DUCK_VARIANTS) {
       gShow(v.label, 'Écoute bien ta musique pendant les annonces.', v.note);
-      await gAsk([`Écouter la ${v.label.toLowerCase().replace(' sur 3', '')}`]);
-      const before = sessionInfo();
-      if (audioZombie) await recreateAudio('avant variante ' + v.id);
-      const okType = setSessionType(v.during);
-      const audioOk = await ensureAudio('baisse musique ' + v.id);
+      let before, okType, audioP = null;
+      // Type de session et (re)démarrage du moteur dans le clic : ensureAudio recrée ou relance avant son premier await.
+      await gAsk([`Écouter la ${v.label.toLowerCase().replace(' sur 3', '')}`], () => { before = sessionInfo(); okType = setSessionType(v.during); audioP = ensureAudio('baisse musique ' + v.id); });
+      let audioOk = await audioP;
       let clockBefore = await audioClock('avant variante ' + v.id), repaired = false;
-      if (clockBefore?.verdict === 'zombie') {
+      if (clockBefore?.verdict !== 'sain') {
         gShow(v.label, 'Le son de l’app s’est figé.', 'Touche « Réparer le son » avant d’écouter.');
-        await gAsk(['Réparer le son']);
-        await recreateAudio('réparation avant variante ' + v.id); repaired = true;
+        await gAsk(['Réparer le son'], () => { audioP = recreateAudio('réparation avant variante ' + v.id); });
+        await audioP; repaired = true; audioOk = ctx.state === 'running';
         clockBefore = await audioClock('avant variante ' + v.id);
       }
       const during = sessionInfo();
@@ -1467,7 +1478,10 @@ async function duckRun() {
       const rec = { variant: v.id, typeApplied: okType, sessionBefore: before, sessionDuring: during, sessionAfter: after, audioBefore: audioOk ? 'running' : ctx?.state, audioAfter: ctx?.state ?? null, clockBefore, repaired, seq, answer };
       if (answer === 'Coupée, ne reprend pas' || answer === 'Coupée puis reprise seule') {
         gShow(v.label, 'Relance ta musique si besoin.', 'Puis reviens ici pour la suite.');
-        await gAsk(['C’est fait']);
+        // Nouveau passage par Spotify : moteur neuf dans le clic.
+        let backP = null;
+        await gAsk(['C’est fait'], () => { backP = recreateAudio('retour de Spotify après ' + v.id); });
+        await backP;
       }
       run.variants.push(rec);
       log(`Baisse musique ${v.id} : ${answer} (type ${during.type}, état ${during.state ?? '—'})`);
