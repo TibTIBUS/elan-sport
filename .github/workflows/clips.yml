@@ -1,0 +1,31 @@
+name: Générer les clips vocaux
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['tools/clips/**']
+
+permissions:
+  contents: write
+
+jobs:
+  clips:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Installer ffmpeg et Piper
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+          pip install piper-tts==1.8.0
+      - name: Générer les clips
+        run: python tools/clips/generate.py
+      - name: Enregistrer les clips dans le dépôt
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add audio/clips
+          git diff --cached --quiet || (git commit -m "Clips vocaux régénérés" && git push)
