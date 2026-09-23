@@ -70,11 +70,12 @@ pre{white-space:pre-wrap;background:var(--surface);border-radius:10px;padding:12
   <h1>Élan, labo</h1>
   <p>Étape 0 : mesurer ce que ton iPhone permet vraiment avant d'écrire l'app. Version <span id="ver"></span>.</p>
   <div class="banner" id="modeBanner" hidden>Tu es dans Safari. Pour les vrais tests : bouton Partager, « Sur l'écran d'accueil », puis ouvre Élan labo depuis l'icône.</div>
+  <p class="help" id="restoreMsg" style="margin-top:12px"></p>
 </header>
 
 <section>
-  <h2><span class="n">1</span>Ton iPhone</h2>
-  <p class="help">Ces infos accompagnent chaque mesure dans le rapport.</p>
+  <h2><span class="n">1</span>Ton iPhone et le contexte</h2>
+  <p class="help">Le contexte (sortie audio, sonnerie, Spotify) est enregistré avec chaque essai au moment où tu le lances : mets-le à jour avant chaque test.</p>
   <label for="model">Modèle d'iPhone</label>
   <input id="model" placeholder="ex. iPhone 13">
   <label for="iosManual">Version d'iOS (Réglages › Général › Informations)</label>
@@ -85,12 +86,13 @@ pre{white-space:pre-wrap;background:var(--surface);border-radius:10px;padding:12
     <div><label for="silent">Bouton sonnerie</label>
       <select id="silent"><option>Sonnerie activée</option><option>Mode silencieux</option></select></div>
   </div>
+  <label class="check"><input type="checkbox" id="spotify"> Spotify est en lecture</label>
   <dl id="envList"></dl>
 </section>
 
 <section>
   <h2><span class="n">2</span>Bips</h2>
-  <p class="help">Lance Spotify en fond, reviens ici, puis teste. Recommence avec l'autre type de session et en mode silencieux.</p>
+  <p class="help">Teste chaque combinaison utile : ambient puis playback, avec et sans Spotify, sonnerie activée puis mode silencieux. Après chaque test, note ce que tu as entendu.</p>
   <label for="session">Type de session audio</label>
   <select id="session">
     <option value="ambient">ambient : se mélange à la musique, respecte le mode silencieux</option>
@@ -98,15 +100,12 @@ pre{white-space:pre-wrap;background:var(--surface);border-radius:10px;padding:12
   </select>
   <button class="primary" id="unlock">Activer le son</button>
   <button id="beepTest" disabled>Bips 1 par seconde pendant 20 s</button>
+  <button id="beepStop" disabled>Arrêter les bips</button>
   <dl id="audioStats"></dl>
-  <div class="row">
-    <div><label for="resAmbient">Résultat en ambient</label><select id="resAmbient" class="res"></select></div>
-    <div><label for="resPlayback">Résultat en playback</label><select id="resPlayback" class="res"></select></div>
-  </div>
-  <div class="row">
-    <div><label for="resSilentAmbient">Mode silencieux, ambient</label><select id="resSilentAmbient" class="res"></select></div>
-    <div><label for="resSilentPlayback">Mode silencieux, playback</label><select id="resSilentPlayback" class="res"></select></div>
-  </div>
+  <label for="heardBeeps">Ce que tu as entendu au dernier test</label>
+  <select id="heardBeeps" class="res"></select>
+  <button id="noteBeeps" disabled>Noter pour ce test</button>
+  <pre id="audioList" hidden></pre>
 </section>
 
 <section>
@@ -117,9 +116,10 @@ pre{white-space:pre-wrap;background:var(--surface);border-radius:10px;padding:12
   <button id="voiceTest" disabled>Tester la voix</button>
   <button id="voiceBeeps" disabled>Voix et bips ensemble pendant 15 s</button>
   <dl id="voiceStats"></dl>
-  <label for="resVoice">Voix avec Spotify</label><select id="resVoice" class="res"></select>
-  <label for="resVoiceBeeps">Voix et bips ensemble</label>
-  <select id="resVoiceBeeps"><option>Non testé</option><option>Les deux audibles, bips réguliers</option><option>Bips décalés ou manquants pendant la voix</option><option>Voix coupée par les bips</option></select>
+  <label for="heardVoice">Ce que tu as entendu au dernier test</label>
+  <select id="heardVoice" class="res voiceRes"></select>
+  <button id="noteVoice" disabled>Noter pour ce test</button>
+  <pre id="voiceList" hidden></pre>
 </section>
 
 <section>
@@ -132,7 +132,7 @@ pre{white-space:pre-wrap;background:var(--surface);border-radius:10px;padding:12
 
 <section>
   <h2><span class="n">5</span>Caméra et comptage</h2>
-  <p class="help">Pompes, méthode visage : téléphone à plat au sol, écran vers le haut, devant ta tête entre tes mains. Les autres méthodes : téléphone debout, calé, de profil. Place-toi en position haute et appuie sur « Position haute », puis en bas et « Position basse ». Ensuite fais une série et note le vrai nombre.</p>
+  <p class="help">Pompes, méthode visage : téléphone à plat au sol, écran vers le haut, devant ta tête entre tes mains. Autres méthodes : téléphone debout, calé, de profil. « Calibrer » te guide à la voix : mets-toi en position haute, ne bouge plus, puis en position basse et tiens-la jusqu'au bip aigu. Ensuite fais une série et note le vrai nombre.</p>
   <div class="row">
     <div><label for="method">Méthode</label>
       <select id="method">
@@ -151,20 +151,18 @@ pre{white-space:pre-wrap;background:var(--surface);border-radius:10px;padding:12
   <div class="stage"><video id="video" playsinline muted></video><canvas id="overlay"></canvas></div>
   <div class="readout"><div class="reps" id="reps">0</div><div class="state" id="camState">Caméra arrêtée</div></div>
   <canvas id="spark"></canvas>
+  <button class="primary" id="calibrate" disabled>Calibrer (mains libres)</button>
   <div class="row">
-    <button id="calTop" disabled>Position haute</button>
-    <button id="calBottom" disabled>Position basse</button>
-  </div>
-  <button class="big" id="plusOne" disabled>+1 manuel</button>
-  <div class="row">
-    <button id="resetReps" disabled>Remettre à zéro</button>
+    <button id="resetReps" disabled>Nouvelle série</button>
     <button id="stillTest" disabled>Test immobile 30 s</button>
   </div>
   <div class="row">
     <div><label for="realCount">Vrai nombre de répétitions</label><input id="realCount" type="number" inputmode="numeric" min="0"></div>
     <div><label for="speed">Vitesse</label><select id="speed"><option>Lente</option><option selected>Normale</option><option>Rapide</option></select></div>
   </div>
-  <button id="saveTrial" disabled>Enregistrer cet essai</button>
+  <button id="saveTrial" disabled>Enregistrer cette série</button>
+  <button class="big" id="tapTest" disabled>Test de réactivité : tapote ici</button>
+  <p class="help">Ce bouton mesure la réaction de l'écran pendant l'analyse. Il ne change pas le compteur.</p>
   <button id="exportRec" disabled>Exporter l'enregistrement</button>
   <dl id="camStats"></dl>
   <pre id="trials" hidden></pre>
@@ -172,11 +170,12 @@ pre{white-space:pre-wrap;background:var(--surface);border-radius:10px;padding:12
 
 <section>
   <h2><span class="n">6</span>Rapport</h2>
-  <p class="help">Copie le rapport et colle-le dans la conversation.</p>
+  <p class="help">Les résultats sont sauvegardés au fur et à mesure sur le téléphone. Copie le rapport et colle-le dans la conversation.</p>
   <label for="notes">Remarques (chauffe, lumière, ressenti…)</label>
   <textarea id="notes"></textarea>
   <button class="primary" id="copyReport">Copier le rapport</button>
   <button id="shareReport">Partager le rapport</button>
+  <button id="clearAll">Effacer tous les résultats</button>
   <p class="help" id="reportMsg"></p>
   <label>Journal</label>
   <pre id="log"></pre>
@@ -184,34 +183,85 @@ pre{white-space:pre-wrap;background:var(--surface);border-radius:10px;padding:12
 </main>
 
 <script type="module">
-const VERSION = '0.0.1-labo';
+const VERSION = '0.0.2-labo';
 const MP_VERSION = '1.0.1';
 const MP_BASE = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VERSION}`;
 const MODELS = {
   face: 'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite',
   pose: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',
 };
+const STORE = 'elan-labo-resultats';
 const LOOKAHEAD_S = 2;
-const RESULTS = ['Non testé', 'OK, musique continue', 'Musique baissée pendant le son', 'Musique coupée', 'Aucun son entendu'];
+const STALE_S = 0.02; // un bip prévu moins de 20 ms dans le futur est considéré périmé
+const HEARD = ['Non noté', 'OK, musique continue', 'OK, sans musique', 'Musique baissée pendant le son', 'Musique coupée', 'Aucun son entendu', 'Bips irréguliers ou en rafale'];
+const HEARD_VOICE = [...HEARD, 'Bips décalés ou manquants pendant la voix', 'Voix coupée par les bips'];
+const FORM_FIELDS = ['model', 'iosManual', 'output', 'silent', 'session', 'method', 'fps', 'notes'];
 
 const $ = (s) => document.querySelector(s);
 const now = () => performance.now();
+const uid = () => Math.random().toString(36).slice(2, 8);
 const pct = (arr, q) => { if (!arr.length) return null; const a = [...arr].sort((x, y) => x - y); return a[Math.min(a.length - 1, Math.floor(q * a.length))]; };
 const r1 = (x) => x == null || !isFinite(x) ? null : Math.round(x * 10) / 10;
 const dl = (el, obj) => { el.innerHTML = Object.entries(obj).map(([k, v]) => `<dt>${k}</dt><dd>${v ?? '—'}</dd>`).join(''); };
 
-const R = { version: VERSION, mediapipe: MP_VERSION, openedAt: new Date().toISOString(), env: {}, audio: { tests: [] }, voice: { startDelaysMs: [] }, wake: null, interruptions: [], camera: { trials: [], minuteLog: [] }, log: [] };
+const R = { version: VERSION, mediapipe: MP_VERSION, openedAt: new Date().toISOString(), env: {}, audio: { tests: [] }, voice: { available: [], tests: [] }, wake: null, interruptions: [], camera: { trials: [], minuteLog: [] }, log: [] };
 function log(msg) {
-  const line = `${new Date().toLocaleTimeString('fr-FR')}  ${msg}`;
-  R.log.push(line);
+  R.log.push(`${new Date().toLocaleTimeString('fr-FR')}  ${msg}`);
+  if (R.log.length > 200) R.log.splice(0, 50);
   $('#log').textContent = R.log.slice(-40).join('\n');
 }
 window.addEventListener('error', (e) => log('Erreur : ' + e.message));
 window.addEventListener('unhandledrejection', (e) => log('Erreur : ' + (e.reason?.message || e.reason)));
 
+function context() {
+  return {
+    at: new Date().toISOString(),
+    audioOutput: $('#output').value, ringSwitch: $('#silent').value, spotify: $('#spotify').checked,
+    session: 'audioSession' in navigator ? navigator.audioSession.type : 'non supporté',
+    voice: $('#voice').selectedOptions[0]?.textContent ?? null,
+  };
+}
+
+/* ---------- Sauvegarde progressive ---------- */
+let saveTimer = null;
+function save() { clearTimeout(saveTimer); saveTimer = setTimeout(saveNow, 400); }
+function saveNow() {
+  try {
+    const form = Object.fromEntries(FORM_FIELDS.map((id) => [id, $('#' + id).value]));
+    form.spotify = $('#spotify').checked;
+    localStorage.setItem(STORE, JSON.stringify({
+      savedAt: new Date().toISOString(), version: VERSION, form,
+      audio: R.audio.tests, voice: R.voice.tests, interruptions: R.interruptions,
+      wake: R.wake ? { ...R.wake, running: false } : null,
+      camera: { trials: R.camera.trials, minuteLog: R.camera.minuteLog },
+      log: R.log.slice(-80),
+    }));
+  } catch (e) { console.warn('Sauvegarde impossible', e); }
+}
+function restore() {
+  let d = null;
+  try { d = JSON.parse(localStorage.getItem(STORE) || 'null'); } catch { d = null; }
+  if (!d) return;
+  for (const [id, v] of Object.entries(d.form || {})) { if (id === 'spotify') $('#spotify').checked = v; else if ($('#' + id) && v != null) $('#' + id).value = v; }
+  R.audio.tests = d.audio || []; R.voice.tests = d.voice || []; R.interruptions = d.interruptions || [];
+  R.wake = d.wake; R.camera.trials = d.camera?.trials || []; R.camera.minuteLog = d.camera?.minuteLog || [];
+  R.log = d.log || [];
+  const n = R.audio.tests.length + R.voice.tests.length + R.camera.trials.length;
+  $('#restoreMsg').textContent = `${n} essai(s) restauré(s), sauvegardés le ${new Date(d.savedAt).toLocaleString('fr-FR')}.`;
+  log(`Résultats restaurés (${n} essais)`);
+}
+FORM_FIELDS.forEach((id) => $('#' + id).addEventListener('change', save));
+$('#notes').addEventListener('input', save);
+$('#spotify').addEventListener('change', save);
+window.addEventListener('pagehide', saveNow);
+$('#clearAll').addEventListener('click', () => {
+  if (!confirm('Effacer tous les résultats enregistrés sur ce téléphone ?')) return;
+  localStorage.removeItem(STORE); location.reload();
+});
+
 /* ---------- 1. Environnement ---------- */
 $('#ver').textContent = VERSION;
-document.querySelectorAll('select.res').forEach((s) => { s.innerHTML = RESULTS.map((r) => `<option>${r}</option>`).join(''); });
+document.querySelectorAll('select.res').forEach((s) => { s.innerHTML = (s.classList.contains('voiceRes') ? HEARD_VOICE : HEARD).map((r) => `<option>${r}</option>`).join(''); });
 const uaIos = (navigator.userAgent.match(/OS (\d+)_(\d+)(?:_(\d+))?/) || []).slice(1).filter(Boolean).join('.') || 'inconnue';
 const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
 $('#modeBanner').hidden = standalone;
@@ -229,6 +279,7 @@ R.env = {
     vibrate: 'vibrate' in navigator,
   },
 };
+restore();
 (async () => {
   try { R.env.storagePersisted = await navigator.storage?.persist?.(); } catch { R.env.storagePersisted = 'erreur'; }
   renderEnv();
@@ -244,7 +295,7 @@ function renderEnv() {
 }
 
 /* ---------- 2. Audio ---------- */
-let ctx = null;
+let ctx = null, activeSched = null;
 function applySession() {
   if (!('audioSession' in navigator)) return 'non supporté';
   try { navigator.audioSession.type = $('#session').value; } catch (e) { log('audioSession : ' + e.message); }
@@ -259,7 +310,6 @@ $('#unlock').addEventListener('click', async () => {
   }
   await ctx.resume();
   const src = ctx.createBufferSource(); src.buffer = ctx.createBuffer(1, 1, 22050); src.connect(ctx.destination); src.start(0);
-  R.audio.session = session;
   R.audio.sampleRate = ctx.sampleRate;
   R.audio.baseLatencyMs = r1(ctx.baseLatency * 1000);
   R.audio.outputLatencyMs = r1(ctx.outputLatency * 1000);
@@ -276,88 +326,137 @@ function beep(when, freq = 880, dur = 0.08) {
   g.gain.exponentialRampToValueAtTime(0.0001, when + dur);
   o.connect(g).connect(ctx.destination);
   o.start(when); o.stop(when + dur + 0.02);
+  return o;
 }
+// Un seul programmateur actif. Les bips périmés sont abandonnés, jamais rejoués en rafale.
 class BeepScheduler {
-  constructor(periodS, totalS, label) { this.period = periodS; this.total = totalS; this.label = label; }
+  constructor(periodS, totalS, label) { this.period = periodS; this.total = totalS; this.label = label; this.nodes = new Set(); this.done = false; }
   start() {
-    this.t0 = ctx.currentTime + 0.5; this.k = 0; this.last = now();
-    this.stats = { test: this.label, session: navigator.audioSession?.type ?? 'n/a', scheduled: 0, late: 0, minLeadMs: Infinity, maxLoopGapMs: 0, loops: 0 };
+    if (activeSched && activeSched !== this) { log('Programmateur précédent arrêté : ' + activeSched.label); activeSched.stop('remplacé'); }
+    activeSched = this;
+    this.t0 = ctx.currentTime + 0.5; this.k = 0; this.last = now(); this.lastWhen = this.t0;
+    this.stats = { id: uid(), kind: 'bips', test: this.label, ...context(), scheduled: 0, dropped: 0, realignments: 0, minLeadMs: Infinity, maxLoopGapMs: 0, loops: 0, heard: 'Non noté' };
     this.timer = setInterval(() => this.loop(), 100);
+    $('#beepStop').disabled = false; $('#beepTest').disabled = true;
     this.loop();
     return this;
   }
   loop() {
     const t = now(), gap = t - this.last; this.last = t;
     if (this.stats.loops++ > 0) this.stats.maxLoopGapMs = Math.max(this.stats.maxLoopGapMs, gap);
-    const horizon = ctx.currentTime + LOOKAHEAD_S;
+    if (ctx.state !== 'running') return; // horloge audio arrêtée : on recalera au retour
+    const cur = ctx.currentTime;
+    if (this.t0 + this.k * this.period < cur + STALE_S) {
+      const next = Math.ceil((cur + STALE_S - this.t0) / this.period);
+      this.stats.dropped += next - this.k; this.stats.realignments++; this.k = next;
+    }
+    const horizon = cur + LOOKAHEAD_S;
     for (;;) {
-      if (this.total && this.k * this.period >= this.total) { this.stop(); return; }
+      if (this.total && this.k * this.period >= this.total) { this.finishScheduling(); return; }
       const when = this.t0 + this.k * this.period;
       if (when > horizon) break;
-      const lead = (when - ctx.currentTime) * 1000;
-      if (lead < 0) { this.stats.late++; beep(ctx.currentTime); } else beep(when, this.k % 10 === 0 ? 1320 : 880);
-      this.stats.minLeadMs = Math.min(this.stats.minLeadMs, lead);
-      this.stats.scheduled++; this.k++;
+      const o = beep(when, this.k % 10 === 0 ? 1320 : 880);
+      this.nodes.add(o); o.onended = () => this.nodes.delete(o);
+      this.stats.minLeadMs = Math.min(this.stats.minLeadMs, (when - cur) * 1000);
+      this.stats.scheduled++; this.k++; this.lastWhen = when;
     }
   }
-  stop() {
-    if (!this.timer) return;
+  finishScheduling() {
     clearInterval(this.timer); this.timer = null;
-    const s = { ...this.stats, minLeadMs: r1(this.stats.minLeadMs), maxLoopGapMs: r1(this.stats.maxLoopGapMs) };
-    R.audio.tests.push(s); renderAudio(); log(`Bips terminés : ${s.scheduled} programmés, ${s.late} en retard`);
-    return s;
+    const wait = Math.max(0, (this.lastWhen - ctx.currentTime) * 1000) + 200;
+    setTimeout(() => this.finalize('terminé'), wait);
+  }
+  stop(reason) {
+    clearInterval(this.timer); this.timer = null;
+    for (const o of this.nodes) { try { o.stop(0); o.disconnect(); } catch {} }
+    this.nodes.clear();
+    this.finalize(reason);
+  }
+  finalize(reason) {
+    if (this.done) return; this.done = true;
+    if (activeSched === this) activeSched = null;
+    const s = { ...this.stats, endedAt: new Date().toISOString(), end: reason, minLeadMs: r1(this.stats.minLeadMs), maxLoopGapMs: r1(this.stats.maxLoopGapMs) };
+    this.stats = s;
+    R.audio.tests.push(s); save(); renderAudio();
+    $('#beepStop').disabled = true; $('#beepTest').disabled = !ctx; $('#noteBeeps').disabled = false;
+    log(`Bips « ${s.test} » ${reason} : ${s.scheduled} programmés, ${s.dropped} abandonnés`);
   }
 }
 function renderAudio() {
   const last = R.audio.tests.at(-1);
   dl($('#audioStats'), {
-    'Session': R.audio.session, 'Latence de base': R.audio.baseLatencyMs != null ? R.audio.baseLatencyMs + ' ms' : null,
+    'Latence de base': R.audio.baseLatencyMs != null ? R.audio.baseLatencyMs + ' ms' : null,
     'Latence de sortie': R.audio.outputLatencyMs != null ? R.audio.outputLatencyMs + ' ms' : 'non fournie',
-    'Dernier test': last ? `${last.scheduled} bips, <span class="${last.late ? 'bad' : 'good'}">${last.late} en retard</span>` : null,
-    'Avance minimale': last ? last.minLeadMs + ' ms' : null,
+    'Dernier test': last ? `${last.test}, ${last.session} : ${last.scheduled} programmés, <span class="${last.dropped ? 'bad' : 'good'}">${last.dropped} abandonnés</span>` : null,
+    'Avance minimale de programmation': last ? last.minLeadMs + ' ms' : null,
     'Plus long blocage JS': last ? `<span class="${last.maxLoopGapMs > 500 ? 'warn' : 'good'}">${last.maxLoopGapMs} ms</span>` : null,
   });
+  const el = $('#audioList'); el.hidden = !R.audio.tests.length;
+  el.textContent = R.audio.tests.map((t) => `${t.test} | ${t.session}, ${t.audioOutput}, ${t.ringSwitch}, Spotify ${t.spotify ? 'oui' : 'non'} | ${t.dropped} abandonnés | ${t.heard}`).join('\n');
 }
 $('#beepTest').addEventListener('click', () => { new BeepScheduler(1, 20, 'bips seuls').start(); log('Test bips lancé'); });
+$('#beepStop').addEventListener('click', () => activeSched?.stop('arrêt manuel'));
+$('#noteBeeps').addEventListener('click', () => {
+  const t = R.audio.tests.at(-1); if (!t) return;
+  t.heard = $('#heardBeeps').value; save(); renderAudio(); log(`Noté pour « ${t.test} » : ${t.heard}`);
+});
 
 /* ---------- 3. Voix ---------- */
 let voices = [];
 function loadVoices() {
   if (!('speechSynthesis' in window)) return;
+  const keep = $('#voice').value;
   voices = speechSynthesis.getVoices().filter((v) => v.lang?.toLowerCase().startsWith('fr'));
   voices.sort((a, b) => (b.localService - a.localService) || a.name.localeCompare(b.name));
   $('#voice').innerHTML = voices.map((v) => `<option value="${v.voiceURI}">${v.name} (${v.lang}, ${v.localService ? 'locale' : 'distante'})</option>`).join('') || '<option>Aucune voix française trouvée</option>';
+  if (keep && voices.some((v) => v.voiceURI === keep)) $('#voice').value = keep;
   R.voice.available = voices.map((v) => ({ name: v.name, lang: v.lang, local: v.localService, isDefault: v.default }));
   renderVoice();
 }
 if ('speechSynthesis' in window) { speechSynthesis.addEventListener?.('voiceschanged', loadVoices); loadVoices(); }
 function speak(text) {
   return new Promise((resolve) => {
+    if (!('speechSynthesis' in window)) return resolve(null);
     const u = new SpeechSynthesisUtterance(text);
     const v = voices.find((x) => x.voiceURI === $('#voice').value);
     if (v) u.voice = v;
     u.lang = 'fr-FR'; u.rate = 1.05;
-    const t0 = now();
-    u.onstart = () => { R.voice.startDelaysMs.push(Math.round(now() - t0)); renderVoice(); };
-    u.onend = () => resolve();
-    u.onerror = (e) => { log('Voix : erreur ' + e.error); resolve(); };
+    const t0 = now(); let delay = null;
+    u.onstart = () => { delay = Math.round(now() - t0); };
+    u.onend = () => resolve(delay);
+    u.onerror = (e) => { log('Voix : erreur ' + e.error); resolve(delay); };
     speechSynthesis.speak(u);
   });
 }
 function renderVoice() {
-  const d = R.voice.startDelaysMs;
-  R.voice.selected = $('#voice').selectedOptions[0]?.textContent;
+  const d = R.voice.tests.map((t) => t.startDelayMs).filter((x) => x != null);
   dl($('#voiceStats'), {
     'Voix françaises': voices.length ? `${voices.length} (${voices.filter((v) => v.localService).length} locales)` : '<span class="bad">aucune</span>',
     'Délai avant parole': d.length ? `médiane ${pct(d, 0.5)} ms, max ${Math.max(...d)} ms (${d.length} essais)` : null,
   });
+  const el = $('#voiceList'); el.hidden = !R.voice.tests.length;
+  el.textContent = R.voice.tests.map((t) => `${t.test} | ${t.voice} | ${t.session}, ${t.audioOutput}, Spotify ${t.spotify ? 'oui' : 'non'} | ${t.startDelayMs ?? '—'} ms | ${t.heard}`).join('\n');
 }
 $('#voice').addEventListener('change', renderVoice);
-$('#voiceTest').addEventListener('click', () => speak('Trois, deux, un, partez !'));
+function recordVoice(test, delays) {
+  R.voice.tests.push({ id: uid(), kind: 'voix', test, ...context(), startDelayMs: delays.length ? Math.max(...delays) : null, heard: 'Non noté' });
+  $('#noteVoice').disabled = false; save(); renderVoice();
+}
+$('#voiceTest').addEventListener('click', async () => { const d = await speak('Trois, deux, un, partez !'); recordVoice('voix seule', d == null ? [] : [d]); });
 $('#voiceBeeps').addEventListener('click', async () => {
+  $('#voiceBeeps').disabled = true;
   new BeepScheduler(1, 15, 'bips + voix').start();
-  const lines = ['Douze', 'Allez, tu y es presque !', 'Repos, trente secondes', 'Dernière série, on lâche rien !'];
-  for (const l of lines) { await new Promise((r) => setTimeout(r, 2500)); await speak(l); }
+  const delays = [];
+  for (const l of ['Douze', 'Allez, tu y es presque !', 'Repos, trente secondes', 'Dernière série, on lâche rien !']) {
+    await new Promise((r) => setTimeout(r, 2500));
+    const d = await speak(l); if (d != null) delays.push(d);
+  }
+  recordVoice('voix + bips', delays);
+  $('#voiceBeeps').disabled = false;
+});
+$('#noteVoice').addEventListener('click', () => {
+  const t = R.voice.tests.at(-1); if (!t) return;
+  t.heard = $('#heardVoice').value; save(); renderVoice(); log(`Noté pour « ${t.test} » : ${t.heard}`);
 });
 
 /* ---------- 4. Veille et Wake Lock ---------- */
@@ -369,18 +468,19 @@ async function requestWake() {
     R.wake.acquired++;
     log('Écran maintenu allumé');
     wakeLock.addEventListener('release', () => {
-      R.wake.releases.push({ afterS: Math.round((now() - R.wake.startMono) / 1000), visible: !document.hidden });
-      wakeLock = null; log('Écran allumé : libéré');
+      if (R.wake) R.wake.releases.push({ afterS: Math.round((now() - R.wake.startMono) / 1000), visible: !document.hidden });
+      wakeLock = null; log('Écran allumé : libéré'); save();
     });
   } catch (e) { R.wake.errors.push(`${e.name}: ${e.message}`); log('Wake Lock refusé : ' + e.message); }
 }
 $('#wakeStart').addEventListener('click', () => {
-  R.wake = { running: true, startMono: now(), startWall: Date.now(), acquired: 0, releases: [], errors: [], endedAfterS: null, screenOffObserved: null };
+  R.wake = { running: true, ...context(), startMono: now(), startWall: Date.now(), acquired: 0, releases: [], errors: [], elapsedS: 0, endedAfterS: null, screenOffObserved: null };
   $('#wakeStart').disabled = true; $('#wakeStop').disabled = false;
   requestWake();
   wakeTimer = setInterval(() => {
-    const el = (now() - R.wake.startMono) / 1000;
-    if (el >= 900) stopWake('15 min atteintes');
+    R.wake.elapsedS = Math.round((Date.now() - R.wake.startWall) / 1000);
+    if (R.wake.elapsedS % 30 === 0) save();
+    if ((now() - R.wake.startMono) / 1000 >= 900) stopWake('15 min atteintes');
     renderWake();
   }, 1000);
 });
@@ -390,33 +490,37 @@ function stopWake(reason) {
   clearInterval(wakeTimer); wakeLock?.release(); wakeLock = null;
   $('#wakeStart').disabled = false; $('#wakeStop').disabled = true;
   R.wake.screenOffObserved = confirm('Pendant le test, l\'écran s\'est-il éteint tout seul ?\nOK = oui, il s\'est éteint\nAnnuler = non, il est resté allumé');
-  log('Test veille arrêté : ' + reason); renderWake();
+  log('Test veille arrêté : ' + reason); save(); renderWake();
 }
 $('#wakeStop').addEventListener('click', () => stopWake('arrêt manuel'));
 function renderWake() {
   const w = R.wake; if (!w) return;
-  const mono = (now() - w.startMono) / 1000, wall = (Date.now() - w.startWall) / 1000;
   const last = R.interruptions.at(-1);
-  dl($('#wakeStats'), {
-    'Temps écoulé': `${Math.floor(wall / 60)} min ${Math.round(wall % 60)} s`,
-    'Écart horloges (mono − civile)': `${Math.round((mono - wall) * 1000)} ms`,
+  const rows = {
     'Écran allumé': wakeLock ? '<span class="good">actif</span>' : '<span class="warn">inactif</span>',
     'Obtenu / libéré': `${w.acquired} / ${w.releases.length}`,
     'Interruptions': R.interruptions.length,
     'Dernière interruption': last ? `${last.hiddenS} s ; mono−civile ${last.monoMinusWallMs} ms ; audio−civile ${last.audioMinusWallMs ?? '—'} ms ; audio au retour : ${last.audioStateOnReturn ?? '—'}` : null,
-  });
+  };
+  if (w.running) {
+    const mono = (now() - w.startMono) / 1000, wall = (Date.now() - w.startWall) / 1000;
+    Object.assign(rows, { 'Temps écoulé': `${Math.floor(wall / 60)} min ${Math.round(wall % 60)} s`, 'Écart horloges (mono − civile)': `${Math.round((mono - wall) * 1000)} ms` });
+  } else if (w.endedAfterS != null) rows['Test terminé après'] = `${w.endedAfterS} s`;
+  dl($('#wakeStats'), rows);
 }
+if (R.wake) renderWake();
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
     hiddenMark = { mono: now(), wall: Date.now(), audio: ctx ? ctx.currentTime : null };
-    log('Page masquée');
+    if (running) invalidateCycle('page masquée');
+    log('Page masquée'); saveNow();
     return;
   }
   if (hiddenMark) {
     const dMono = now() - hiddenMark.mono, dWall = Date.now() - hiddenMark.wall;
     const dAudio = ctx && hiddenMark.audio != null ? (ctx.currentTime - hiddenMark.audio) * 1000 : null;
-    const rec = { hiddenS: r1(dWall / 1000), monoMinusWallMs: Math.round(dMono - dWall), audioMinusWallMs: dAudio == null ? null : Math.round(dAudio - dWall), audioStateOnReturn: ctx?.state ?? null };
-    R.interruptions.push(rec);
+    const rec = { at: new Date().toISOString(), hiddenS: r1(dWall / 1000), monoMinusWallMs: Math.round(dMono - dWall), audioMinusWallMs: dAudio == null ? null : Math.round(dAudio - dWall), audioStateOnReturn: ctx?.state ?? null, wakeTestRunning: !!R.wake?.running };
+    R.interruptions.push(rec); save();
     log(`Retour après ${rec.hiddenS} s (mono−civile ${rec.monoMinusWallMs} ms, audio ${rec.audioStateOnReturn ?? 'inactif'})`);
     hiddenMark = null;
   }
@@ -430,10 +534,12 @@ window.addEventListener('pageshow', (e) => { if (e.persisted) log('Page restaur�
 const video = $('#video'), overlay = $('#overlay'), octx = overlay.getContext('2d');
 const spark = $('#spark'), sctx = spark.getContext('2d');
 let vision = null, detector = null, detectorKind = null, delegateUsed = null, loadMs = null;
-let stream = null, running = false, lastProc = 0, camBeeper = null, minuteTimer = null;
-let S = null; // statistiques de la session caméra
-const C = { top: null, bottom: null, state: 'attente', reps: 0, lastRepAt: 0, lostSince: null, still: null };
+let stream = null, running = false, lastProc = 0, camBeeper = null, minuteTimer = null, calToken = 0;
+let S = null; // session caméra (modèle, enregistrement, courbe)
+let T = null; // mesures de la série en cours, remises à zéro à chaque série
+const C = { top: null, bottom: null, state: 'attente', reps: 0, lastRepAt: 0, stable: 0, lastFrameT: null, lost: false, still: null };
 const TRIPLES = { poseElbow: [[11, 13, 15], [12, 14, 16]], poseKnee: [[23, 25, 27], [24, 26, 28]], poseHip: [[11, 23, 25], [12, 24, 26]] };
+const stableFrames = () => Math.max(3, Math.ceil(S.fps * 0.3));
 
 async function ensureDetector(kind) {
   if (detector && detectorKind === kind) return;
@@ -454,6 +560,9 @@ async function ensureDetector(kind) {
   log(`Modèle ${kind} chargé en ${loadMs} ms (${delegateUsed})`);
 }
 const kindOf = (m) => (m === 'face' ? 'face' : 'pose');
+function newTrial() {
+  T = { id: uid(), startedAt: new Date().toISOString(), t0: now(), frames: 0, noDetect: 0, detectMs: [], inputLatencyMs: [], invalidatedCycles: 0, invalidations: {} };
+}
 
 $('#camStart').addEventListener('click', async () => {
   const method = $('#method').value;
@@ -464,21 +573,22 @@ $('#camStart').addEventListener('click', async () => {
     await ensureDetector(kindOf(method));
   } catch (e) {
     log('Caméra : ' + (e.message || e.name));
+    stopCamera();
     $('#camState').innerHTML = `<span class="bad">Échec : ${e.message || e.name}</span>`;
-    stopCamera(); return;
+    return;
   }
   overlay.width = video.videoWidth; overlay.height = video.videoHeight;
-  S = { method, fps: +$('#fps').value, startedAt: now(), frames: 0, noDetect: 0, detectMs: [], inputLatencyMs: [], signals: [], recording: $('#record').checked ? [] : null, minuteFrames: 0, minute: 0 };
-  resetCounter(true);
+  S = { method, fps: +$('#fps').value, startedAt: now(), signals: [], sigLog: [], recording: $('#record').checked ? [] : null, minuteFrames: 0, minuteDetect: [], minute: 0 };
+  newTrial(); resetCounter(true);
   running = true; lastProc = 0;
-  ['#camStop', '#calTop', '#calBottom', '#plusOne', '#resetReps', '#stillTest', '#saveTrial'].forEach((s) => ($(s).disabled = false));
+  ['#camStop', '#calibrate', '#resetReps', '#stillTest', '#saveTrial', '#tapTest'].forEach((s) => ($(s).disabled = false));
   $('#exportRec').disabled = !S.recording;
   if ($('#camBeeps').checked && ctx) camBeeper = new BeepScheduler(1, 0, 'bips pendant caméra ' + method).start();
   else if ($('#camBeeps').checked) log('Bips pendant caméra ignorés : active d\'abord le son (section 2)');
   minuteTimer = setInterval(() => {
     S.minute++;
-    R.camera.minuteLog.push({ method: S.method, minute: S.minute, fps: r1(S.minuteFrames / 60), detectP95Ms: r1(pct(S.detectMs.slice(-S.minuteFrames), 0.95)) });
-    S.minuteFrames = 0;
+    R.camera.minuteLog.push({ method: S.method, fps: S.fps, minute: S.minute, analysesPerS: r1(S.minuteFrames / 60), detectP95Ms: r1(pct(S.minuteDetect, 0.95)) });
+    S.minuteFrames = 0; S.minuteDetect = []; save();
   }, 60000);
   nextFrame();
 });
@@ -502,8 +612,7 @@ function processFrame(t) {
   let res;
   try { res = detector.detectForVideo(video, t0); } catch (e) { log('Analyse : ' + e.message); return; }
   const dt = now() - t0;
-  S.detectMs.push(dt); if (S.detectMs.length > 4000) S.detectMs.splice(0, 1000);
-  S.frames++; S.minuteFrames++;
+  T.detectMs.push(dt); T.frames++; S.minuteFrames++; S.minuteDetect.push(dt);
   const vw = video.videoWidth, vh = video.videoHeight;
   let sig = null, drawData = null, rec = null;
   if (S.method === 'face') {
@@ -512,7 +621,7 @@ function processFrame(t) {
   } else {
     const lm = res.landmarks?.[0];
     if (lm) {
-      const px = (i) => [lm[i].x * vw, lm[i].y * vh];
+      const px = (i) => [lm[i].x * vw, lm[i].y * vh]; // coordonnées en pixels : angles non déformés
       const vis = (tr) => Math.min(...tr.map((i) => lm[i].visibility ?? 0));
       const [A, B] = TRIPLES[S.method];
       const tr = vis(A) >= vis(B) ? A : B;
@@ -520,24 +629,29 @@ function processFrame(t) {
       rec = lm.map((p) => [+p.x.toFixed(4), +p.y.toFixed(4), +(p.visibility ?? 0).toFixed(2)]);
     }
   }
-  if (sig == null) S.noDetect++;
+  if (sig == null) T.noDetect++;
   S.signals.push(sig); if (S.signals.length > 150) S.signals.shift();
-  if (S.recording) S.recording.push({ t: Math.round(t), sig: sig == null ? null : +sig.toFixed(4), d: rec });
+  S.sigLog.push({ t, sig }); while (S.sigLog.length && S.sigLog[0].t < t - 6000) S.sigLog.shift();
+  if (S.recording) S.recording.push({ trial: T.id, t: Math.round(t), sig: sig == null ? null : +sig.toFixed(4), d: rec });
   feed(sig, t);
   draw(drawData);
   drawSpark();
-  if (S.frames % 15 === 0) renderCam();
+  if (T.frames % 15 === 0) renderCam();
+}
+// Règle : aucune répétition n'est déduite à travers une perte de suivi ou une interruption.
+function invalidateCycle(reason) {
+  if (C.state === 'bas' && T) { T.invalidatedCycles++; T.invalidations[reason] = (T.invalidations[reason] || 0) + 1; log('Cycle annulé : ' + reason); }
+  C.state = 'attente'; C.stable = 0;
 }
 function feed(sig, t) {
-  if (sig == null) {
-    if (C.lostSince == null) C.lostSince = t;
-    if (t - C.lostSince > 1000 && C.state !== 'attente') { C.state = 'attente'; log('Suivi perdu plus de 1 s : cycle réinitialisé'); }
-    showState(); return;
-  }
-  C.lostSince = null;
+  const gap = C.lastFrameT == null ? 0 : t - C.lastFrameT;
+  C.lastFrameT = t;
+  if (gap > Math.max(400, 3000 / S.fps)) invalidateCycle('interruption sans images');
+  if (sig == null) { C.lost = true; invalidateCycle('perte de suivi'); showState(); return; }
+  C.lost = false; C.stable++;
   if (C.top == null || C.bottom == null || Math.abs(C.bottom - C.top) < 1e-6) { showState(); return; }
   const p = (sig - C.top) / (C.bottom - C.top);
-  if (C.state === 'attente') { if (p < 0.3) C.state = 'haut'; }
+  if (C.state === 'attente') { if (C.stable >= stableFrames() && p < 0.3) C.state = 'haut'; }
   else if (C.state === 'haut') { if (p > 0.7) C.state = 'bas'; }
   else if (C.state === 'bas' && p < 0.3) {
     if (t - C.lastRepAt >= 400) { C.reps++; C.lastRepAt = t; if (ctx) beep(ctx.currentTime, 1500, 0.05); $('#reps').textContent = C.reps; }
@@ -547,8 +661,8 @@ function feed(sig, t) {
 }
 function showState() {
   const labels = { attente: 'Mets-toi en position haute', haut: 'Haut', bas: 'Bas' };
-  let txt = C.top == null || C.bottom == null ? 'Calibre haut et bas' : labels[C.state];
-  if (C.lostSince != null) txt = '<span class="bad">Non détecté</span>';
+  let txt = C.top == null || C.bottom == null ? 'Calibre d\'abord' : labels[C.state];
+  if (C.lost) txt = '<span class="bad">Non détecté</span>';
   if (C.still) txt += `<br>Test immobile : ${Math.max(0, Math.ceil((C.still.end - now()) / 1000))} s`;
   $('#camState').innerHTML = txt;
 }
@@ -584,96 +698,145 @@ function drawSpark() {
   });
   sctx.stroke();
 }
-function recentMedian() { const v = S.signals.slice(-10).filter((x) => x != null); return v.length >= 5 ? pct(v, 0.5) : null; }
-function calibrate(which) {
-  const m = recentMedian();
-  if (m == null) { log('Calibration impossible : pas assez de détections'); return; }
-  C[which] = m; C.state = 'attente';
-  log(`Position ${which === 'top' ? 'haute' : 'basse'} : ${r1(S.method === 'face' ? m * 100 : m)}${S.method === 'face' ? ' % de l\'image' : '°'}`);
+
+/* Calibration mains libres : annonce, puis capture de la médiane sur 1 s de détection stable */
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+async function announce(text) {
+  if ('speechSynthesis' in window && voices.length) { await speak(text); return; }
+  if (ctx) { for (let i = 0; i < 3; i++) beep(ctx.currentTime + i * 0.6, 880, 0.1); await sleep(2000); } else await sleep(3000);
+}
+async function captureStable(token, maxMs) {
+  const until = now() + maxMs;
+  while (now() < until) {
+    if (token !== calToken || !running) return null;
+    const t = now();
+    const win = S.sigLog.filter((e) => e.t >= t - 1000);
+    const ok = win.filter((e) => e.sig != null).map((e) => e.sig);
+    if (win.length >= S.fps * 0.7 && ok.length >= win.length * 0.8) {
+      const med = pct(ok, 0.5), spread = Math.max(...ok) - Math.min(...ok);
+      const stable = S.method === 'face' ? spread / med < 0.12 : spread < 12;
+      if (stable) return med;
+    }
+    await sleep(100);
+  }
+  return null;
+}
+$('#calibrate').addEventListener('click', async () => {
+  const token = ++calToken;
+  $('#calibrate').disabled = true;
+  C.top = null; C.bottom = null; invalidateCycle('calibration'); showState();
+  for (const [which, label] of [['top', 'haute'], ['bottom', 'basse']]) {
+    await announce(`Position ${label}. Tiens-la. Trois, deux, un.`);
+    if (token !== calToken || !running) break;
+    const m = await captureStable(token, 4000);
+    if (m == null) {
+      if (token === calToken && running) { log(`Calibration ${label} ratée : détection instable`); await announce('Calibration ratée, recommence.'); }
+      break;
+    }
+    C[which] = m;
+    if (ctx) beep(ctx.currentTime, 1760, 0.15);
+    log(`Position ${label} : ${r1(S.method === 'face' ? m * 100 : m)}${S.method === 'face' ? ' % de l\'image' : '°'}`);
+  }
   if (C.top != null && C.bottom != null) {
     const amp = Math.abs(C.bottom - C.top), rel = S.method === 'face' ? amp / C.top : amp / 180;
     if (rel < 0.08) log('Attention : écart haut/bas très faible, comptage peu fiable');
+    await announce('Calibration terminée.');
+    newTrial(); resetCounter(false);
   }
+  if (running) $('#calibrate').disabled = false;
   showState();
-}
-$('#calTop').addEventListener('click', () => calibrate('top'));
-$('#calBottom').addEventListener('click', () => calibrate('bottom'));
+});
+
+function cancelStill() { if (C.still) { clearTimeout(C.still.timer); C.still = null; } }
 function resetCounter(full) {
-  C.reps = 0; C.lastRepAt = 0; C.state = 'attente'; C.lostSince = null; C.still = null;
+  cancelStill();
+  C.reps = 0; C.lastRepAt = 0; C.state = 'attente'; C.stable = 0; C.lost = false;
   if (full) { C.top = null; C.bottom = null; }
   $('#reps').textContent = 0; showState();
 }
-$('#resetReps').addEventListener('click', () => resetCounter(false));
-$('#plusOne').addEventListener('pointerdown', (e) => {
+$('#resetReps').addEventListener('click', () => { newTrial(); resetCounter(false); log('Nouvelle série'); });
+$('#tapTest').addEventListener('pointerdown', (e) => {
   const t0 = e.timeStamp;
-  C.reps++; $('#reps').textContent = C.reps;
-  requestAnimationFrame(() => { const lat = now() - t0; if (lat >= 0 && lat < 5000) S?.inputLatencyMs.push(lat); });
+  const b = $('#tapTest'); b.style.background = '#2e3e4e';
+  requestAnimationFrame(() => {
+    const lat = now() - t0;
+    if (lat >= 0 && lat < 5000 && T) T.inputLatencyMs.push(lat);
+    b.style.background = '';
+    b.textContent = `Test de réactivité : ${T?.inputLatencyMs.length ?? 0} appuis`;
+  });
 });
 $('#stillTest').addEventListener('click', () => {
-  if (C.top == null || C.bottom == null) { log('Calibre d\'abord haut et bas'); return; }
-  resetCounter(false);
-  C.still = { end: now() + 30000 };
-  log('Test immobile : ne bouge pas pendant 30 s');
-  setTimeout(() => {
-    if (!running || !C.still) return;
+  if (C.top == null || C.bottom == null) { log('Calibre d\'abord'); return; }
+  newTrial(); resetCounter(false);
+  const id = uid();
+  C.still = { id, end: now() + 30000, timer: setTimeout(() => {
+    if (!running || C.still?.id !== id) return;
     R.camera.trials.push({ type: 'immobile 30 s', ...trialBase(), inventedReps: C.reps });
     log(`Test immobile terminé : ${C.reps} répétition(s) inventée(s)`);
-    C.still = null; renderTrials(); showState();
-  }, 30000);
+    C.still = null; save(); renderTrials(); newTrial(); resetCounter(false);
+  }, 30000) };
+  log('Test immobile : ne bouge pas pendant 30 s');
 });
 function trialBase() {
   return {
-    method: S.method, fps: S.fps, delegate: delegateUsed, modelLoadMs: loadMs,
-    top: r1(C.top), bottom: r1(C.bottom),
-    detectMs: { p50: r1(pct(S.detectMs, 0.5)), p95: r1(pct(S.detectMs, 0.95)), max: r1(Math.max(...S.detectMs)) },
-    realFps: r1(S.frames / ((now() - S.startedAt) / 1000)),
-    noDetectPct: S.frames ? r1((S.noDetect / S.frames) * 100) : null,
-    inputLatencyMs: { p50: r1(pct(S.inputLatencyMs, 0.5)), p95: r1(pct(S.inputLatencyMs, 0.95)), n: S.inputLatencyMs.length },
+    id: T.id, startedAt: T.startedAt, endedAt: new Date().toISOString(), durationS: Math.round((now() - T.t0) / 1000),
+    ...context(), method: S.method, fps: S.fps, delegate: delegateUsed, modelLoadMs: loadMs,
+    top: r1(S.method === 'face' ? C.top * 100 : C.top), bottom: r1(S.method === 'face' ? C.bottom * 100 : C.bottom),
+    detectMs: { p50: r1(pct(T.detectMs, 0.5)), p95: r1(pct(T.detectMs, 0.95)), max: r1(Math.max(...T.detectMs)) },
+    analysesPerS: r1(T.frames / Math.max(1, (now() - T.t0) / 1000)),
+    noDetectPct: T.frames ? r1((T.noDetect / T.frames) * 100) : null,
+    invalidatedCycles: T.invalidatedCycles, invalidations: T.invalidations,
+    tapLatencyMs: { p50: r1(pct(T.inputLatencyMs, 0.5)), p95: r1(pct(T.inputLatencyMs, 0.95)), n: T.inputLatencyMs.length },
+    beepsDuringCamera: camBeeper ? { dropped: camBeeper.stats.dropped, maxLoopGapMs: r1(camBeeper.stats.maxLoopGapMs) } : null,
   };
 }
 $('#saveTrial').addEventListener('click', () => {
   const real = parseInt($('#realCount').value, 10);
   if (!Number.isFinite(real)) { log('Indique le vrai nombre de répétitions'); return; }
   const t = { type: 'série', ...trialBase(), speed: $('#speed').value, counted: C.reps, real, error: C.reps - real };
-  R.camera.trials.push(t); renderTrials();
-  log(`Essai enregistré : ${t.counted} comptées pour ${real} réelles`);
-  $('#realCount').value = ''; resetCounter(false);
+  R.camera.trials.push(t); save(); renderTrials();
+  log(`Série enregistrée : ${t.counted} comptées pour ${real} réelles`);
+  $('#realCount').value = ''; newTrial(); resetCounter(false);
 });
 function renderTrials() {
   const el = $('#trials'); el.hidden = !R.camera.trials.length;
   el.textContent = R.camera.trials.map((t) => t.type === 'série'
-    ? `${t.method} ${t.speed} : ${t.counted}/${t.real} (écart ${t.error > 0 ? '+' : ''}${t.error})`
+    ? `${t.method} ${t.speed} : ${t.counted}/${t.real} (écart ${t.error > 0 ? '+' : ''}${t.error}), ${t.invalidatedCycles} cycle(s) annulé(s)`
     : `${t.method} immobile : ${t.inventedReps} inventée(s)`).join('\n');
 }
+renderTrials(); renderAudio(); renderVoice();
 function renderCam() {
-  if (!S) return;
-  const p95 = pct(S.detectMs, 0.95), lat = pct(S.inputLatencyMs, 0.95);
+  if (!T) return;
+  const p95 = pct(T.detectMs, 0.95), lat = pct(T.inputLatencyMs, 0.95);
   dl($('#camStats'), {
     'Moteur': `${delegateUsed}, chargé en ${loadMs} ms`,
-    'Cadence réelle': `${r1(S.frames / ((now() - S.startedAt) / 1000))} analyses/s`,
-    'Durée d\'analyse': `médiane ${r1(pct(S.detectMs, 0.5))} ms, p95 <span class="${p95 > 60 ? 'warn' : 'good'}">${r1(p95)} ms</span>, max ${r1(Math.max(...S.detectMs))} ms`,
-    'Sans détection': `${r1((S.noDetect / S.frames) * 100)} %`,
-    'Réaction du +1 (p95)': lat == null ? 'appuie sur +1 plusieurs fois' : `<span class="${lat > 150 ? 'bad' : 'good'}">${r1(lat)} ms</span> sur ${S.inputLatencyMs.length}`,
-    'Bips pendant caméra': camBeeper?.stats ? `${camBeeper.stats.late} en retard, blocage max ${r1(camBeeper.stats.maxLoopGapMs)} ms` : 'désactivés',
+    'Cadence (série)': `${r1(T.frames / Math.max(1, (now() - T.t0) / 1000))} analyses/s`,
+    'Durée d\'analyse (série)': `médiane ${r1(pct(T.detectMs, 0.5))} ms, p95 <span class="${p95 > 60 ? 'warn' : 'good'}">${r1(p95)} ms</span>, max ${r1(Math.max(...T.detectMs))} ms`,
+    'Sans détection (série)': `${r1((T.noDetect / Math.max(1, T.frames)) * 100)} %`,
+    'Cycles annulés (série)': T.invalidatedCycles,
+    'Réactivité p95 (série)': lat == null ? 'tapote le bouton de test' : `<span class="${lat > 150 ? 'bad' : 'good'}">${r1(lat)} ms</span> sur ${T.inputLatencyMs.length}`,
+    'Bips pendant caméra': camBeeper?.stats ? `${camBeeper.stats.dropped} abandonnés, blocage max ${r1(camBeeper.stats.maxLoopGapMs)} ms` : 'désactivés',
     'Signal actuel': S.signals.at(-1) == null ? '—' : (S.method === 'face' ? r1(S.signals.at(-1) * 100) + ' %' : r1(S.signals.at(-1)) + '°'),
   });
 }
 function stopCamera() {
-  running = false;
+  running = false; calToken++;
+  cancelStill();
   stream?.getTracks().forEach((t) => t.stop()); stream = null; video.srcObject = null;
   clearInterval(minuteTimer);
-  if (camBeeper) { camBeeper.stop(); camBeeper = null; }
-  if (S) { R.camera.lastSession = trialBase(); R.camera.lastSession.durationS = Math.round((now() - S.startedAt) / 1000); renderCam(); }
+  if (camBeeper) { camBeeper.stop('caméra arrêtée'); camBeeper = null; }
+  if (T && S) renderCam();
   octx.clearRect(0, 0, overlay.width, overlay.height);
   $('#camStart').disabled = false;
-  ['#camStop', '#calTop', '#calBottom', '#plusOne', '#resetReps', '#stillTest', '#saveTrial'].forEach((s) => ($(s).disabled = true));
+  ['#camStop', '#calibrate', '#resetReps', '#stillTest', '#saveTrial', '#tapTest'].forEach((s) => ($(s).disabled = true));
   $('#camState').textContent = 'Caméra arrêtée';
+  save();
 }
 $('#camStop').addEventListener('click', () => { stopCamera(); log('Caméra arrêtée'); });
 $('#method').addEventListener('change', () => { if (running) { stopCamera(); log('Méthode changée : relance la caméra'); } });
 $('#exportRec').addEventListener('click', async () => {
   if (!S?.recording?.length) { log('Rien à exporter'); return; }
-  const data = { app: 'elan-labo', version: VERSION, method: S.method, video: { w: video.videoWidth || overlay.width, h: video.videoHeight || overlay.height }, top: C.top, bottom: C.bottom, frames: S.recording, trials: R.camera.trials };
+  const data = { app: 'elan-labo', version: VERSION, method: S.method, fps: S.fps, video: { w: video.videoWidth || overlay.width, h: video.videoHeight || overlay.height }, calibration: { top: C.top, bottom: C.bottom }, frames: S.recording, trials: R.camera.trials.filter((t) => t.method === S.method) };
   const file = new File([JSON.stringify(data)], `elan-${S.method}-${Date.now()}.json`, { type: 'application/json' });
   try {
     if (navigator.canShare?.({ files: [file] })) await navigator.share({ files: [file], title: 'Enregistrement Élan' });
@@ -684,24 +847,21 @@ $('#exportRec').addEventListener('click', async () => {
 
 /* ---------- 6. Rapport ---------- */
 function buildReport() {
-  Object.assign(R.env, { iphone: $('#model').value || 'non renseigné', iosDeclared: $('#iosManual').value || 'non renseignée', audioOutput: $('#output').value, ringSwitch: $('#silent').value });
-  R.results = {
-    beepsAmbient: $('#resAmbient').value, beepsPlayback: $('#resPlayback').value,
-    silentAmbient: $('#resSilentAmbient').value, silentPlayback: $('#resSilentPlayback').value,
-    voiceWithMusic: $('#resVoice').value, voiceWithBeeps: $('#resVoiceBeeps').value,
-  };
+  Object.assign(R.env, { iphone: $('#model').value || 'non renseigné', iosDeclared: $('#iosManual').value || 'non renseignée' });
   R.notes = $('#notes').value;
   R.reportAt = new Date().toISOString();
+  const yn = (b) => (b ? 'oui' : 'non');
   const lines = [
     `ÉLAN, rapport labo ${VERSION} (MediaPipe ${MP_VERSION})`,
-    `${R.env.iphone}, iOS ${R.env.iosDeclared}, ${R.env.mode}, sortie : ${R.env.audioOutput}`,
-    `Bips ambient : ${R.results.beepsAmbient} | playback : ${R.results.beepsPlayback}`,
-    `Silencieux ambient : ${R.results.silentAmbient} | playback : ${R.results.silentPlayback}`,
-    `Voix + musique : ${R.results.voiceWithMusic} | voix + bips : ${R.results.voiceWithBeeps}`,
+    `${R.env.iphone}, iOS ${R.env.iosDeclared}, ${R.env.mode}`,
+    'Note : les mesures audio portent sur la programmation des bips, pas sur l\'instant où le son est entendu.',
+    ...R.audio.tests.map((t) => `Bips « ${t.test} » | ${t.session}, ${t.audioOutput}, ${t.ringSwitch}, Spotify ${yn(t.spotify)} | ${t.scheduled} programmés, ${t.dropped} abandonnés, blocage max ${t.maxLoopGapMs} ms | entendu : ${t.heard}`),
+    ...R.voice.tests.map((t) => `Voix « ${t.test} » | ${t.voice} | ${t.session}, ${t.audioOutput}, Spotify ${yn(t.spotify)} | délai ${t.startDelayMs ?? '—'} ms | entendu : ${t.heard}`),
     ...R.camera.trials.map((t) => t.type === 'série'
-      ? `Essai ${t.method} (${t.speed}, ${t.fps} fps, ${t.delegate}) : ${t.counted}/${t.real}, analyse p95 ${t.detectMs.p95} ms, +1 p95 ${t.inputLatencyMs.p95} ms`
+      ? `Série ${t.method} (${t.speed}, ${t.fps} fps, ${t.delegate}) : ${t.counted}/${t.real}, ${t.invalidatedCycles} cycle(s) annulé(s), sans détection ${t.noDetectPct} %, analyse p95 ${t.detectMs.p95} ms, réactivité p95 ${t.tapLatencyMs.p95 ?? '—'} ms`
       : `Immobile ${t.method} : ${t.inventedReps} inventée(s)`),
-    R.wake ? `Veille : ${R.wake.endedAfterS ?? 'en cours'} s, écran allumé obtenu ${R.wake.acquired}× libéré ${R.wake.releases.length}×, extinction observée : ${R.wake.screenOffObserved ? 'oui' : 'non'}` : 'Veille : non testée',
+    R.wake ? `Veille : ${R.wake.endedAfterS ?? R.wake.elapsedS} s, écran allumé obtenu ${R.wake.acquired}× libéré ${R.wake.releases.length}×, extinction observée : ${R.wake.screenOffObserved == null ? 'non notée' : yn(R.wake.screenOffObserved)}` : 'Veille : non testée',
+    `Interruptions : ${R.interruptions.map((i) => `${i.hiddenS} s (mono−civile ${i.monoMinusWallMs} ms, audio ${i.audioStateOnReturn ?? '—'})`).join(' ; ') || 'aucune'}`,
     `Remarques : ${R.notes || '—'}`,
     '', 'Données complètes :', JSON.stringify({ ...R, log: R.log.slice(-60) }),
   ];
@@ -716,7 +876,7 @@ $('#shareReport').addEventListener('click', async () => {
   try { await navigator.share({ title: 'Rapport Élan labo', text }); }
   catch (e) { if (e.name !== 'AbortError') $('#reportMsg').textContent = 'Partage impossible : ' + e.message; }
 });
-log('Labo prêt');
+log('Labo prêt, version ' + VERSION);
 </script>
 </body>
 </html>
