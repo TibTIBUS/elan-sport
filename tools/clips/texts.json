@@ -1,0 +1,23 @@
+{
+  "voice": {
+    "name": "fr_FR-siwis-medium",
+    "base": "https://huggingface.co/rhasspy/piper-voices/resolve/main/fr/fr_FR/siwis/medium/"
+  },
+  "clips": {
+    "n1": { "text": "Un.", "tempo": 1.15 },
+    "n2": { "text": "Deux.", "tempo": 1.15 },
+    "n3": { "text": "Trois.", "tempo": 1.15 },
+    "n4": { "text": "Quatre.", "tempo": 1.15 },
+    "n5": { "text": "Cinq.", "tempo": 1.15 },
+    "n6": { "text": "Six.", "tempo": 1.15 },
+    "n7": { "text": "Sept.", "tempo": 1.15 },
+    "n8": { "text": "Huit.", "tempo": 1.15 },
+    "n9": { "text": "Neuf.", "tempo": 1.15 },
+    "n10": { "text": "Dix.", "tempo": 1.15 },
+    "partez": { "text": "Partez !" },
+    "repos": { "text": "Repos." },
+    "fin": { "text": "Séance terminée." },
+    "enc1": { "text": "Allez, tu y es presque !" },
+    "enc2": { "text": "Dernière série, on lâche rien !" }
+  }
+}
