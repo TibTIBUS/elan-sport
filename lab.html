@@ -112,6 +112,7 @@ pre{white-space:pre-wrap;background:var(--surface);border-radius:10px;padding:12
 <section>
   <h2><span class="n">3</span>Voix</h2>
   <p class="help">Les voix marquées « locale » fonctionnent sans réseau et sont prioritaires.</p>
+  <p class="help warn">Attention : la voix d'iOS peut bloquer le moteur audio de l'app. Fais cette section en dernier.</p>
   <label for="voice">Voix française</label>
   <select id="voice"></select>
   <button id="voiceTest" disabled>Tester la voix</button>
@@ -203,7 +204,7 @@ pre{white-space:pre-wrap;background:var(--surface);border-radius:10px;padding:12
 </main>
 
 <script type="module">
-const VERSION = '0.0.3-labo';
+const VERSION = '0.0.4-labo';
 const MP_VERSION = '1.0.1';
 const MP_BASE = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VERSION}`;
 const MODELS = {
@@ -325,7 +326,9 @@ function applySession() {
 function renderSession() {
   const s = 'audioSession' in navigator ? navigator.audioSession.type : 'non supporté';
   const note = s === 'ambient' ? 'Se mélange à la musique. En mode silencieux, l\'app est muette.' : s === 'playback' ? 'Sonne même en mode silencieux.' : 'Choisis un type puis active le son.';
-  $('#sessionNote').innerHTML = `Session active : <strong>${s}</strong>. ${note}`;
+  const st = ctx ? ctx.state : 'inactif';
+  const stTxt = st === 'running' ? '<span class="good">en marche</span>' : `<span class="bad">${st}</span>`;
+  $('#sessionNote').innerHTML = `Session active : <strong>${s}</strong>. ${note}<br>Moteur audio : ${stTxt}`;
 }
 renderSession();
 $('#session').addEventListener('change', () => { const t = applySession(); log('Session audio : ' + t); renderSession(); ctx?.resume(); });
@@ -333,19 +336,32 @@ $('#unlock').addEventListener('click', async () => {
   const session = applySession();
   if (!ctx) {
     ctx = new (window.AudioContext || window.webkitAudioContext)();
-    ctx.onstatechange = () => log('Contexte audio : ' + ctx.state);
+    ctx.onstatechange = () => { log('Contexte audio : ' + ctx.state + (ctx.state === 'interrupted' ? ' (coupé par iOS)' : '')); R.audio.stateChanges = (R.audio.stateChanges || 0) + 1; renderSession(); };
   }
   await ctx.resume();
   const src = ctx.createBufferSource(); src.buffer = ctx.createBuffer(1, 1, 22050); src.connect(ctx.destination); src.start(0);
   R.audio.sampleRate = ctx.sampleRate;
   R.audio.baseLatencyMs = r1(ctx.baseLatency * 1000);
-  R.audio.outputLatencyMs = r1(ctx.outputLatency * 1000);
+  const ol = ctx.outputLatency; R.audio.outputLatencyMs = ol > 0 && ol < 1 ? r1(ol * 1000) : null;
   ['#beepTest', '#voiceTest', '#voiceBeeps', '#clipLoad'].forEach((s) => ($(s).disabled = false));
   renderSession();
   $('#unlock').textContent = 'Son activé';
   renderAudio();
   log('Son activé, session ' + session);
 });
+// Chaque test commence par vérifier le moteur audio, et le relance si iOS l'a coupé.
+async function ensureAudio(label) {
+  if (!ctx) { log('Active d\'abord le son (section 2)'); return false; }
+  if (ctx.state !== 'running') {
+    const before = ctx.state;
+    try { await ctx.resume(); } catch (e) { log('Relance audio : ' + e.message); }
+    log(`Moteur audio ${before} → ${ctx.state} avant « ${label} »`);
+    R.audio.resumes = (R.audio.resumes || 0) + 1;
+    renderSession();
+  }
+  if (ctx.state !== 'running') { log(`« ${label} » annulé : moteur audio bloqué (${ctx.state})`); return false; }
+  return true;
+}
 function beep(when, freq = 880, dur = 0.08) {
   const o = ctx.createOscillator(), g = ctx.createGain();
   o.frequency.value = freq;
@@ -427,7 +443,7 @@ function renderAudio() {
   const el = $('#audioList'); el.hidden = !R.audio.tests.length;
   el.textContent = R.audio.tests.map((t) => `${t.test} | ${t.session}, ${t.audioOutput}, ${t.ringSwitch}, Spotify ${t.spotify ? 'oui' : 'non'} | ${t.dropped} abandonnés | ${t.heard}`).join('\n');
 }
-$('#beepTest').addEventListener('click', () => { new BeepScheduler(1, 20, 'bips seuls').start(); log('Test bips lancé'); });
+$('#beepTest').addEventListener('click', async () => { if (!(await ensureAudio('bips seuls'))) return; new BeepScheduler(1, 20, 'bips seuls').start(); log('Test bips lancé'); });
 $('#beepStop').addEventListener('click', () => activeSched?.stop('arrêt manuel'));
 $('#noteBeeps').addEventListener('click', () => {
   const t = R.audio.tests.at(-1); if (!t) return;
@@ -472,11 +488,12 @@ function renderVoice() {
 }
 $('#voice').addEventListener('change', renderVoice);
 function recordVoice(test, delays) {
-  R.voice.tests.push({ id: uid(), kind: 'voix', test, ...context(), startDelayMs: delays.length ? Math.max(...delays) : null, heard: 'Non noté' });
+  R.voice.tests.push({ id: uid(), kind: 'voix', test, ...context(), audioStateAfter: ctx?.state ?? null, startDelayMs: delays.length ? Math.max(...delays) : null, heard: 'Non noté' });
   $('#noteVoice').disabled = false; save(); renderVoice();
 }
-$('#voiceTest').addEventListener('click', async () => { const d = await speak('Trois, deux, un, partez !'); recordVoice('voix seule', d == null ? [] : [d]); });
+$('#voiceTest').addEventListener('click', async () => { const d = await speak('Trois, deux, un, partez !'); recordVoice('voix seule', d == null ? [] : [d]); setTimeout(() => log('Moteur audio après la voix : ' + (ctx?.state ?? 'inactif')), 300); });
 $('#voiceBeeps').addEventListener('click', async () => {
+  if (!(await ensureAudio('bips + voix'))) return;
   $('#voiceBeeps').disabled = true;
   new BeepScheduler(1, 15, 'bips + voix').start();
   const delays = [];
@@ -539,11 +556,13 @@ function stopAllClips() {
 }
 function startClipTest(name) {
   if (clipTest) finishClipTest('remplacé');
-  clipTest = { id: uid(), kind: 'clips', test: name, ...context(), played: 0, interrupted: 0, replaced: 0, dropped: 0, cancelled: 0, heard: 'Non noté' };
+  clipTest = { id: uid(), kind: 'clips', test: name, ...context(), audioState: ctx?.state ?? null, played: 0, interrupted: 0, replaced: 0, dropped: 0, cancelled: 0, heard: 'Non noté' };
   log('Test clips : ' + name);
+  return clipTest.id;
 }
-function finishClipTest(end = 'terminé') {
-  if (!clipTest) return;
+const finishLater = (id, ms) => setTimeout(() => finishClipTest('terminé', id), ms);
+function finishClipTest(end = 'terminé', id = null) {
+  if (!clipTest || (id && clipTest.id !== id)) return;
   const t = { ...clipTest, end, endedAt: new Date().toISOString() };
   clipTest = null;
   R.clips.tests.push(t); save(); renderClips(); $('#noteClips').disabled = false;
@@ -569,32 +588,40 @@ $('#clipLoad').addEventListener('click', async () => {
   } catch (e) { log('Clips : ' + e.message); $('#clipLoad').disabled = false; }
   renderClips();
 });
-$('#clipCount').addEventListener('click', () => {
-  startClipTest('compter 1 à 10');
+$('#clipCount').addEventListener('click', async () => {
+  if (!(await ensureAudio('compter 1 à 10'))) return;
+  stopAllClips();
+  const id = startClipTest('compter 1 à 10');
   const t0 = ctx.currentTime + 0.3;
   for (let i = 1; i <= 10; i++) playClip('n' + i, PRIO.count, t0 + (i - 1) * 1.2);
-  setTimeout(() => finishClipTest(), 12500);
+  finishLater(id, 12500);
 });
-$('#clipFast').addEventListener('click', () => {
-  startClipTest('comptage rapide');
-  for (let i = 1; i <= 10; i++) setTimeout(() => playClip('n' + i, PRIO.count), (i - 1) * 350);
-  setTimeout(() => finishClipTest(), 5000);
+$('#clipFast').addEventListener('click', async () => {
+  if (!(await ensureAudio('comptage rapide'))) return;
+  stopAllClips();
+  const id = startClipTest('comptage rapide');
+  for (let i = 1; i <= 10; i++) setTimeout(() => { if (clipTest?.id === id) playClip('n' + i, PRIO.count); }, (i - 1) * 350);
+  finishLater(id, 5000);
 });
-$('#clipPrio').addEventListener('click', () => {
-  startClipTest('encouragement puis Repos');
+$('#clipPrio').addEventListener('click', async () => {
+  if (!(await ensureAudio('encouragement puis Repos'))) return;
+  stopAllClips();
+  const id = startClipTest('encouragement puis Repos');
   const t0 = ctx.currentTime + 0.2;
   playClip('enc2', PRIO.encouragement, t0);
   playClip('repos', PRIO.signal, t0 + 0.8);
-  setTimeout(() => finishClipTest(), 3500);
+  finishLater(id, 3500);
 });
-$('#clipPause').addEventListener('click', () => {
-  startClipTest('pause pendant une phrase');
+$('#clipPause').addEventListener('click', async () => {
+  if (!(await ensureAudio('pause pendant une phrase'))) return;
+  stopAllClips();
+  const id = startClipTest('pause pendant une phrase');
   const t0 = ctx.currentTime + 0.1;
   playClip('enc1', PRIO.encouragement, t0);
   playClip('partez', PRIO.signal, t0 + 2.2);
   playClip('n1', PRIO.count, t0 + 3);
-  setTimeout(() => { cstat('cancelled', stopAllClips()); log('Pause : tous les sons annulés'); }, 700);
-  setTimeout(() => finishClipTest(), 4500);
+  setTimeout(() => { if (clipTest?.id !== id) return; cstat('cancelled', stopAllClips()); log('Pause : tous les sons annulés'); }, 700);
+  finishLater(id, 4500);
 });
 
 // Séance simulée : calendrier sur l'horloge monotone, converti en temps audio à chaque passage.
@@ -607,14 +634,15 @@ class SimSession {
       { kind: 'enc', period: 15000, next: 16500, i: 0 },
     ];
     this.beeps = new Set();
-    this.stats = { staleDropped: 0, cancelledOnHide: 0, hides: 0, maxHiddenS: 0 };
+    this.stats = { staleDropped: 0, cancelledOnHide: 0, hides: 0, maxHiddenS: 0, blockedLoops: 0 };
     startClipTest('séance simulée');
     this.timer = setInterval(() => this.loop(), 100);
     $('#simStart').disabled = true; $('#simStop').disabled = false;
     this.loop();
   }
   loop() {
-    if (document.hidden || !ctx || ctx.state !== 'running') return;
+    if (document.hidden || !ctx) return;
+    if (ctx.state !== 'running') { this.stats.blockedLoops = (this.stats.blockedLoops || 0) + 1; if (this.stats.blockedLoops % 20 === 1) ctx.resume().catch(() => {}); return; }
     const t = now(), offset = ctx.currentTime - t / 1000, horizon = t + 1500;
     for (const s of this.streams) {
       while (this.startMono + s.next <= horizon) {
@@ -645,7 +673,7 @@ class SimSession {
     sim = null; renderClips();
   }
 }
-$('#simStart').addEventListener('click', () => { sim = new SimSession(); sim.start(); });
+$('#simStart').addEventListener('click', async () => { if (!(await ensureAudio('séance simulée'))) return; stopAllClips(); sim = new SimSession(); sim.start(); });
 $('#simStop').addEventListener('click', () => sim?.stop());
 $('#noteClips').addEventListener('click', () => {
   const t = R.clips.tests.at(-1); if (!t) return;
@@ -779,6 +807,7 @@ $('#camStart').addEventListener('click', async () => {
   running = true; lastProc = 0;
   ['#camStop', '#calibrate', '#resetReps', '#stillTest', '#saveTrial', '#tapTest'].forEach((s) => ($(s).disabled = false));
   $('#exportRec').disabled = !S.recording;
+  if (ctx) await ensureAudio('caméra');
   if ($('#camBeeps').checked && ctx) camBeeper = new BeepScheduler(1, 0, 'bips pendant caméra ' + method).start();
   else if ($('#camBeeps').checked) log('Bips pendant caméra ignorés : active d\'abord le son (section 2)');
   minuteTimer = setInterval(() => {
@@ -808,6 +837,7 @@ function processFrame(t) {
   let res;
   try { res = detector.detectForVideo(video, t0); } catch (e) { log('Analyse : ' + e.message); return; }
   const dt = now() - t0;
+  if (S.firstDetectMs == null) { S.firstDetectMs = Math.round(dt); log(`Première analyse : ${S.firstDetectMs} ms (préchauffage)`); return; }
   T.detectMs.push(dt); T.frames++; S.minuteFrames++; S.minuteDetect.push(dt);
   const vw = video.videoWidth, vh = video.videoHeight;
   let sig = null, drawData = null, rec = null;
@@ -897,9 +927,13 @@ function drawSpark() {
 
 /* Calibration mains libres : annonce, puis capture de la médiane sur 1 s de détection stable */
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-async function announce(text) {
-  if ('speechSynthesis' in window && voices.length) { await speak(text); return; }
-  if (ctx) { for (let i = 0; i < 3; i++) beep(ctx.currentTime + i * 0.6, 880, 0.1); await sleep(2000); } else await sleep(3000);
+// Annonces de calibration : clips enregistrés, sinon bips. Jamais la voix d'iOS, qui coupe le moteur audio.
+async function announce(clipId) {
+  if (ctx && ctx.state !== 'running') { try { await ctx.resume(); } catch {} }
+  const buf = clipBuf[clipId];
+  if (ctx && buf) { playClip(clipId, PRIO.signal); await sleep(buf.duration * 1000 + 150); }
+  else if (ctx) { beep(ctx.currentTime, 660, 0.15); await sleep(400); }
+  if (ctx && clipId !== 'calok' && clipId !== 'calko') { for (let i = 0; i < 3; i++) beep(ctx.currentTime + 0.2 + i * 0.6, 880, 0.08); await sleep(2000); }
 }
 async function captureStable(token, maxMs) {
   const until = now() + maxMs;
@@ -921,12 +955,13 @@ $('#calibrate').addEventListener('click', async () => {
   const token = ++calToken;
   $('#calibrate').disabled = true;
   C.top = null; C.bottom = null; invalidateCycle('calibration'); showState();
-  for (const [which, label] of [['top', 'haute'], ['bottom', 'basse']]) {
-    await announce(`Position ${label}. Tiens-la. Trois, deux, un.`);
+  if (!clipBuf.haut) log('Clips de calibration non chargés (section 4) : annonces par bips');
+  for (const [which, label, clip] of [['top', 'haute', 'haut'], ['bottom', 'basse', 'bas']]) {
+    await announce(clip);
     if (token !== calToken || !running) break;
     const m = await captureStable(token, 4000);
     if (m == null) {
-      if (token === calToken && running) { log(`Calibration ${label} ratée : détection instable`); await announce('Calibration ratée, recommence.'); }
+      if (token === calToken && running) { log(`Calibration ${label} ratée : détection instable`); await announce('calko'); }
       break;
     }
     C[which] = m;
@@ -936,7 +971,7 @@ $('#calibrate').addEventListener('click', async () => {
   if (C.top != null && C.bottom != null) {
     const amp = Math.abs(C.bottom - C.top), rel = S.method === 'face' ? amp / C.top : amp / 180;
     if (rel < 0.08) log('Attention : écart haut/bas très faible, comptage peu fiable');
-    await announce('Calibration terminée.');
+    await announce('calok');
     newTrial(); resetCounter(false);
   }
   if (running) $('#calibrate').disabled = false;
@@ -976,7 +1011,7 @@ $('#stillTest').addEventListener('click', () => {
 function trialBase() {
   return {
     id: T.id, startedAt: T.startedAt, endedAt: new Date().toISOString(), durationS: Math.round((now() - T.t0) / 1000),
-    ...context(), method: S.method, fps: S.fps, delegate: delegateUsed, modelLoadMs: loadMs,
+    ...context(), method: S.method, fps: S.fps, delegate: delegateUsed, modelLoadMs: loadMs, firstDetectMs: S.firstDetectMs,
     top: r1(S.method === 'face' ? C.top * 100 : C.top), bottom: r1(S.method === 'face' ? C.bottom * 100 : C.bottom),
     detectMs: { p50: r1(pct(T.detectMs, 0.5)), p95: r1(pct(T.detectMs, 0.95)), max: r1(Math.max(...T.detectMs)) },
     analysesPerS: r1(T.frames / Math.max(1, (now() - T.t0) / 1000)),
@@ -1005,7 +1040,7 @@ function renderCam() {
   if (!T) return;
   const p95 = pct(T.detectMs, 0.95), lat = pct(T.inputLatencyMs, 0.95);
   dl($('#camStats'), {
-    'Moteur': `${delegateUsed}, chargé en ${loadMs} ms`,
+    'Moteur': `${delegateUsed}, chargé en ${loadMs} ms, première analyse ${S.firstDetectMs ?? '—'} ms`,
     'Cadence (série)': `${r1(T.frames / Math.max(1, (now() - T.t0) / 1000))} analyses/s`,
     'Durée d\'analyse (série)': `médiane ${r1(pct(T.detectMs, 0.5))} ms, p95 <span class="${p95 > 60 ? 'warn' : 'good'}">${r1(p95)} ms</span>, max ${r1(Math.max(...T.detectMs))} ms`,
     'Sans détection (série)': `${r1((T.noDetect / Math.max(1, T.frames)) * 100)} %`,
@@ -1051,10 +1086,11 @@ function buildReport() {
     `ÉLAN, rapport labo ${VERSION} (MediaPipe ${MP_VERSION})`,
     `${R.env.iphone}, iOS ${R.env.iosDeclared}, ${R.env.mode}`,
     'Note : les mesures audio portent sur la programmation des bips, pas sur l\'instant où le son est entendu.',
+    `Moteur audio : ${R.audio.stateChanges ?? 0} changements d'état, ${R.audio.resumes ?? 0} relances`,
     ...R.audio.tests.map((t) => `Bips « ${t.test} » | ${t.session}, ${t.audioOutput}, ${t.ringSwitch}, Spotify ${yn(t.spotify)} | ${t.scheduled} programmés, ${t.dropped} abandonnés, blocage max ${t.maxLoopGapMs} ms | entendu : ${t.heard}`),
     R.clips.count ? `Clips : ${R.clips.count} chargés en ${R.clips.loadMs} ms (${R.clips.voice})` : 'Clips : non chargés',
-    ...R.clips.tests.map((t) => `Clips « ${t.test} » | ${t.session}, ${t.audioOutput}, ${t.ringSwitch}, Spotify ${yn(t.spotify)} | joués ${t.played}, interrompus ${t.interrupted}, remplacés ${t.replaced}, écartés ${t.dropped}, annulés ${t.cancelled}${t.staleDropped != null ? `, périmés écartés ${t.staleDropped}, sons annulés au masquage ${t.cancelledOnHide}, masquage max ${t.maxHiddenS} s` : ''} | entendu : ${t.heard}`),
-    ...R.voice.tests.map((t) => `Voix « ${t.test} » | ${t.voice} | ${t.session}, ${t.audioOutput}, Spotify ${yn(t.spotify)} | délai ${t.startDelayMs ?? '—'} ms | entendu : ${t.heard}`),
+    ...R.clips.tests.map((t) => `Clips « ${t.test} » | ${t.session}, ${t.audioOutput}, ${t.ringSwitch}, Spotify ${yn(t.spotify)} | joués ${t.played}, interrompus ${t.interrupted}, remplacés ${t.replaced}, écartés ${t.dropped}, annulés ${t.cancelled}${t.staleDropped != null ? `, périmés écartés ${t.staleDropped}, sons annulés au masquage ${t.cancelledOnHide}, masquage max ${t.maxHiddenS} s` : ''} | moteur ${t.audioState ?? '—'} | entendu : ${t.heard}`),
+    ...R.voice.tests.map((t) => `Voix « ${t.test} » | ${t.voice} | ${t.session}, ${t.audioOutput}, Spotify ${yn(t.spotify)} | délai ${t.startDelayMs ?? '—'} ms | moteur après : ${t.audioStateAfter ?? '—'} | entendu : ${t.heard}`),
     ...R.camera.trials.map((t) => t.type === 'série'
       ? `Série ${t.method} (${t.speed}, ${t.fps} fps, ${t.delegate}${t.repClips ? ', clips' : ''}) : ${t.counted}/${t.real}, ${t.invalidatedCycles} cycle(s) annulé(s), sans détection ${t.noDetectPct} %, analyse p95 ${t.detectMs.p95} ms, réactivité p95 ${t.tapLatencyMs.p95 ?? '—'} ms`
       : `Immobile ${t.method} : ${t.inventedReps} inventée(s)`),

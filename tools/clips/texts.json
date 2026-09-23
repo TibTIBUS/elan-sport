@@ -18,6 +18,10 @@
     "repos": { "text": "Repos." },
     "fin": { "text": "Séance terminée." },
     "enc1": { "text": "Allez, tu y es presque !" },
-    "enc2": { "text": "Dernière série, on lâche rien !" }
+    "enc2": { "text": "Dernière série, on lâche rien !" },
+    "haut": { "text": "Position haute. Ne bouge plus." },
+    "bas": { "text": "Position basse. Tiens-la." },
+    "calok": { "text": "Calibration terminée." },
+    "calko": { "text": "Calibration ratée, recommence." }
   }
 }
