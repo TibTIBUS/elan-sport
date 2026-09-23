@@ -99,6 +99,7 @@ pre{white-space:pre-wrap;background:var(--surface);border-radius:10px;padding:12
     <option value="playback">playback : sonne même en silencieux, peut couper la musique</option>
   </select>
   <p class="help" id="sessionNote" style="margin-top:8px"></p>
+  <button class="primary" id="reactivate" hidden>Réactiver le son</button>
   <button class="primary" id="unlock">Activer le son</button>
   <button id="beepTest" disabled>Bips 1 par seconde pendant 20 s</button>
   <button id="beepStop" disabled>Arrêter les bips</button>
@@ -152,7 +153,7 @@ pre{white-space:pre-wrap;background:var(--surface);border-radius:10px;padding:12
 
 <section>
   <h2><span class="n">6</span>Caméra et comptage</h2>
-  <p class="help">Pompes, méthode visage : téléphone à plat au sol, écran vers le haut, devant ta tête entre tes mains. Autres méthodes : téléphone debout, calé, de profil. « Calibrer » te guide à la voix : mets-toi en position haute, ne bouge plus, puis en position basse et tiens-la jusqu'au bip aigu. Ensuite fais une série et note le vrai nombre.</p>
+  <p class="help">Pompes, méthode visage : téléphone à plat au sol, écran vers le haut, devant ta tête entre tes mains. Autres méthodes : téléphone debout, calé, de profil. « Calibrer » te guide à la voix : mets-toi en position haute, ne bouge plus, puis en position basse et tiens-la jusqu'au bip aigu. Ensuite fais une série et note le vrai nombre. Au démarrage, attends la fin du « Préchauffage » avant de calibrer.</p>
   <div class="row">
     <div><label for="method">Méthode</label>
       <select id="method">
@@ -204,7 +205,7 @@ pre{white-space:pre-wrap;background:var(--surface);border-radius:10px;padding:12
 </main>
 
 <script type="module">
-const VERSION = '0.0.4-labo';
+const VERSION = '0.0.5-labo';
 const MP_VERSION = '1.0.1';
 const MP_BASE = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VERSION}`;
 const MODELS = {
@@ -328,7 +329,8 @@ function renderSession() {
   const note = s === 'ambient' ? 'Se mélange à la musique. En mode silencieux, l\'app est muette.' : s === 'playback' ? 'Sonne même en mode silencieux.' : 'Choisis un type puis active le son.';
   const st = ctx ? ctx.state : 'inactif';
   const stTxt = st === 'running' ? '<span class="good">en marche</span>' : `<span class="bad">${st}</span>`;
-  $('#sessionNote').innerHTML = `Session active : <strong>${s}</strong>. ${note}<br>Moteur audio : ${stTxt}`;
+  $('#sessionNote').innerHTML = `Session active : <strong>${s}</strong>. ${note}<br>Moteur audio : ${stTxt} <span class="help">(« en marche » ne garantit pas que le son est audible)</span>`;
+  $('#reactivate').hidden = !ctx || st === 'running';
 }
 renderSession();
 $('#session').addEventListener('change', () => { const t = applySession(); log('Session audio : ' + t); renderSession(); ctx?.resume(); });
@@ -349,7 +351,8 @@ $('#unlock').addEventListener('click', async () => {
   renderAudio();
   log('Son activé, session ' + session);
 });
-// Chaque test commence par vérifier le moteur audio, et le relance si iOS l'a coupé.
+$('#reactivate').addEventListener('click', () => ensureAudio('réactivation manuelle'));
+// Tentative de reprise uniquement sur geste explicite (démarrage d'un test, bouton « Réactiver le son ») ou retour au premier plan.
 async function ensureAudio(label) {
   if (!ctx) { log('Active d\'abord le son (section 2)'); return false; }
   if (ctx.state !== 'running') {
@@ -642,7 +645,7 @@ class SimSession {
   }
   loop() {
     if (document.hidden || !ctx) return;
-    if (ctx.state !== 'running') { this.stats.blockedLoops = (this.stats.blockedLoops || 0) + 1; if (this.stats.blockedLoops % 20 === 1) ctx.resume().catch(() => {}); return; }
+    if (ctx.state !== 'running') { this.stats.blockedLoops++; renderClips(); return; } // pas de resume() automatique : bouton « Réactiver le son »
     const t = now(), offset = ctx.currentTime - t / 1000, horizon = t + 1500;
     for (const s of this.streams) {
       while (this.startMono + s.next <= horizon) {
@@ -749,7 +752,7 @@ document.addEventListener('visibilitychange', () => {
   }
   sim?.onVisible();
   if (R.wake?.running && !wakeLock) requestWake();
-  if (ctx && ctx.state !== 'running') ctx.resume().then(() => log('Contexte audio relancé')).catch((e) => log('Relance audio impossible : ' + e.message));
+  if (ctx && ctx.state !== 'running') ctx.resume().then(() => { log('Retour : moteur audio ' + ctx.state); R.audio.resumes = (R.audio.resumes || 0) + 1; renderSession(); }).catch((e) => { log('Retour : relance impossible, ' + e.message); renderSession(); });
   renderWake();
 });
 window.addEventListener('pageshow', (e) => { if (e.persisted) log('Page restaurée depuis le cache'); });
@@ -802,10 +805,10 @@ $('#camStart').addEventListener('click', async () => {
     return;
   }
   overlay.width = video.videoWidth; overlay.height = video.videoHeight;
-  S = { method, fps: +$('#fps').value, startedAt: now(), signals: [], sigLog: [], recording: $('#record').checked ? [] : null, minuteFrames: 0, minuteDetect: [], minute: 0 };
+  S = { method, fps: +$('#fps').value, startedAt: now(), signals: [], sigLog: [], recording: $('#record').checked ? [] : null, minuteFrames: 0, minuteDetect: [], minute: 0, warm: { ms: [], done: false } };
   newTrial(); resetCounter(true);
   running = true; lastProc = 0;
-  ['#camStop', '#calibrate', '#resetReps', '#stillTest', '#saveTrial', '#tapTest'].forEach((s) => ($(s).disabled = false));
+  $('#camStop').disabled = false; // le reste attend la fin du préchauffage
   $('#exportRec').disabled = !S.recording;
   if (ctx) await ensureAudio('caméra');
   if ($('#camBeeps').checked && ctx) camBeeper = new BeepScheduler(1, 0, 'bips pendant caméra ' + method).start();
@@ -832,12 +835,26 @@ function angle(a, b, c) {
   const d = Math.hypot(...v1) * Math.hypot(...v2);
   return d ? Math.acos(Math.max(-1, Math.min(1, (v1[0] * v2[0] + v1[1] * v2[1]) / d))) * 180 / Math.PI : null;
 }
+// Préchauffage : au moins 5 analyses sur de vraies images ; terminé quand les 5 dernières sont toutes
+// sous max(2 × leur médiane, 50 ms), ou au bout de 40 analyses (échec signalé). Calibration bloquée d'ici là.
+function warmStep(dt) {
+  const w = S.warm; w.ms.push(dt);
+  const last = w.ms.slice(-5);
+  const stable = w.ms.length >= 5 && Math.max(...last) < Math.max(2 * pct(last, 0.5), 50);
+  $('#camState').textContent = `Préchauffage : ${w.ms.length} analyses`;
+  if (!stable && w.ms.length < 40) return;
+  w.done = true; w.ok = stable;
+  w.summary = { frames: w.ms.length, firstMs: Math.round(w.ms[0]), maxMs: Math.round(Math.max(...w.ms)), totalMs: Math.round(w.ms.reduce((a, b) => a + b, 0)), stableMedianMs: r1(pct(last, 0.5)), ok: stable };
+  log(`Préchauffage ${stable ? 'terminé' : 'NON stabilisé'} : ${w.summary.frames} analyses, première ${w.summary.firstMs} ms, max ${w.summary.maxMs} ms, total ${w.summary.totalMs} ms`);
+  ['#calibrate', '#resetReps', '#stillTest', '#saveTrial', '#tapTest'].forEach((b) => ($(b).disabled = false));
+  newTrial(); showState();
+}
 function processFrame(t) {
   const t0 = now();
   let res;
   try { res = detector.detectForVideo(video, t0); } catch (e) { log('Analyse : ' + e.message); return; }
   const dt = now() - t0;
-  if (S.firstDetectMs == null) { S.firstDetectMs = Math.round(dt); log(`Première analyse : ${S.firstDetectMs} ms (préchauffage)`); return; }
+  if (!S.warm.done) { warmStep(dt); return; } // préchauffage : vraies images, résultats ignorés
   T.detectMs.push(dt); T.frames++; S.minuteFrames++; S.minuteDetect.push(dt);
   const vw = video.videoWidth, vh = video.videoHeight;
   let sig = null, drawData = null, rec = null;
@@ -929,7 +946,6 @@ function drawSpark() {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // Annonces de calibration : clips enregistrés, sinon bips. Jamais la voix d'iOS, qui coupe le moteur audio.
 async function announce(clipId) {
-  if (ctx && ctx.state !== 'running') { try { await ctx.resume(); } catch {} }
   const buf = clipBuf[clipId];
   if (ctx && buf) { playClip(clipId, PRIO.signal); await sleep(buf.duration * 1000 + 150); }
   else if (ctx) { beep(ctx.currentTime, 660, 0.15); await sleep(400); }
@@ -954,6 +970,7 @@ async function captureStable(token, maxMs) {
 $('#calibrate').addEventListener('click', async () => {
   const token = ++calToken;
   $('#calibrate').disabled = true;
+  if (ctx) await ensureAudio('calibration'); // une tentative sur ton geste, pas pendant les annonces
   C.top = null; C.bottom = null; invalidateCycle('calibration'); showState();
   if (!clipBuf.haut) log('Clips de calibration non chargés (section 4) : annonces par bips');
   for (const [which, label, clip] of [['top', 'haute', 'haut'], ['bottom', 'basse', 'bas']]) {
@@ -1011,7 +1028,7 @@ $('#stillTest').addEventListener('click', () => {
 function trialBase() {
   return {
     id: T.id, startedAt: T.startedAt, endedAt: new Date().toISOString(), durationS: Math.round((now() - T.t0) / 1000),
-    ...context(), method: S.method, fps: S.fps, delegate: delegateUsed, modelLoadMs: loadMs, firstDetectMs: S.firstDetectMs,
+    ...context(), method: S.method, fps: S.fps, delegate: delegateUsed, modelLoadMs: loadMs, warmup: S.warm.summary ?? null,
     top: r1(S.method === 'face' ? C.top * 100 : C.top), bottom: r1(S.method === 'face' ? C.bottom * 100 : C.bottom),
     detectMs: { p50: r1(pct(T.detectMs, 0.5)), p95: r1(pct(T.detectMs, 0.95)), max: r1(Math.max(...T.detectMs)) },
     analysesPerS: r1(T.frames / Math.max(1, (now() - T.t0) / 1000)),
@@ -1040,7 +1057,7 @@ function renderCam() {
   if (!T) return;
   const p95 = pct(T.detectMs, 0.95), lat = pct(T.inputLatencyMs, 0.95);
   dl($('#camStats'), {
-    'Moteur': `${delegateUsed}, chargé en ${loadMs} ms, première analyse ${S.firstDetectMs ?? '—'} ms`,
+    'Moteur': `${delegateUsed}, chargé en ${loadMs} ms` + (S.warm.summary ? `, préchauffage ${S.warm.summary.frames} analyses (1re ${S.warm.summary.firstMs} ms, max ${S.warm.summary.maxMs} ms)` : ''),
     'Cadence (série)': `${r1(T.frames / Math.max(1, (now() - T.t0) / 1000))} analyses/s`,
     'Durée d\'analyse (série)': `médiane ${r1(pct(T.detectMs, 0.5))} ms, p95 <span class="${p95 > 60 ? 'warn' : 'good'}">${r1(p95)} ms</span>, max ${r1(Math.max(...T.detectMs))} ms`,
     'Sans détection (série)': `${r1((T.noDetect / Math.max(1, T.frames)) * 100)} %`,
@@ -1092,7 +1109,7 @@ function buildReport() {
     ...R.clips.tests.map((t) => `Clips « ${t.test} » | ${t.session}, ${t.audioOutput}, ${t.ringSwitch}, Spotify ${yn(t.spotify)} | joués ${t.played}, interrompus ${t.interrupted}, remplacés ${t.replaced}, écartés ${t.dropped}, annulés ${t.cancelled}${t.staleDropped != null ? `, périmés écartés ${t.staleDropped}, sons annulés au masquage ${t.cancelledOnHide}, masquage max ${t.maxHiddenS} s` : ''} | moteur ${t.audioState ?? '—'} | entendu : ${t.heard}`),
     ...R.voice.tests.map((t) => `Voix « ${t.test} » | ${t.voice} | ${t.session}, ${t.audioOutput}, Spotify ${yn(t.spotify)} | délai ${t.startDelayMs ?? '—'} ms | moteur après : ${t.audioStateAfter ?? '—'} | entendu : ${t.heard}`),
     ...R.camera.trials.map((t) => t.type === 'série'
-      ? `Série ${t.method} (${t.speed}, ${t.fps} fps, ${t.delegate}${t.repClips ? ', clips' : ''}) : ${t.counted}/${t.real}, ${t.invalidatedCycles} cycle(s) annulé(s), sans détection ${t.noDetectPct} %, analyse p95 ${t.detectMs.p95} ms, réactivité p95 ${t.tapLatencyMs.p95 ?? '—'} ms`
+      ? `Série ${t.method} (${t.speed}, ${t.fps} fps, ${t.delegate}${t.repClips ? ', clips' : ''}) : ${t.counted}/${t.real}, ${t.invalidatedCycles} cycle(s) annulé(s), sans détection ${t.noDetectPct} %, analyse p95 ${t.detectMs.p95} ms (max ${t.detectMs.max}), préchauffage ${t.warmup ? `${t.warmup.frames} analyses, 1re ${t.warmup.firstMs} ms${t.warmup.ok ? '' : ' NON STABLE'}` : '—'}, réactivité p95 ${t.tapLatencyMs.p95 ?? '—'} ms`
       : `Immobile ${t.method} : ${t.inventedReps} inventée(s)`),
     R.wake ? `Veille : ${R.wake.endedAfterS ?? R.wake.elapsedS} s, écran allumé obtenu ${R.wake.acquired}× libéré ${R.wake.releases.length}×, extinction observée : ${R.wake.screenOffObserved == null ? 'non notée' : yn(R.wake.screenOffObserved)}` : 'Veille : non testée',
     `Interruptions : ${R.interruptions.map((i) => `${i.hiddenS} s (mono−civile ${i.monoMinusWallMs} ms, audio ${i.audioStateOnReturn ?? '—'})`).join(' ; ') || 'aucune'}`,
