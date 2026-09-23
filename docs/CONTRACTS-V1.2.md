@@ -40,7 +40,7 @@ Snapshot : statut, config copiée au démarrage, phase/phase suivante, temps tot
 
 ## Audio
 
-Un seul AudioContext, ambient si disponible. Clips existants locaux au repo et bips synthétiques. Pas de voix iOS ni repli speechSynthesis. Téléchargement/décodage des clips anticipé et non bloquant ; clip absent = bip seul. La V0.1 n'annonce pas chaque répétition : la banque n'est pas complète.
+Un seul AudioContext, ambient si disponible. Clips existants locaux au repo et bips synthétiques. Pas de voix iOS ni repli speechSynthesis. Téléchargement/décodage des clips avant le démarrage du moteur lorsque la voix est activée, avec délai réseau borné ; clip absent = bip seul. Aucun temps de séance consommé pendant cette préparation. Fermer les réglages annule également un test sonore encore en cours de chargement. La V0.1 n'annonce pas chaque répétition : la banque n'est pas complète.
 
 Horloge audio indépendante : conversion depuis mono à chaque programmation. État non running = annulation des sources et déduplication réinitialisée. ensure() seulement à un démarrage/reprise volontaire, bouton Réactiver et retour au premier plan si séance running. Pas de relance sur pause/arrêt/+1. Une tentative concurrente au maximum, attente UI bornée à 1,5 s. Running indique que le contexte fonctionne, jamais que l'utilisateur entend le son. Mode silencieux iPhone : ambient peut rester muet.
 

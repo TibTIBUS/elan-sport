@@ -27,3 +27,24 @@ test('interrupted audio and expired signals are not played', () => {
   ctx.state = 'interrupted'; audio.schedule({ revision: 1, signals: [cue('a', 2000)] }, 1000); assert.equal(sources.length, 0);
   ctx.state = 'running'; audio.schedule({ revision: 2, signals: [cue('a', 2000)] }, 5000); assert.equal(sources.length, 0);
 });
+test('closing settings while test clips load prevents deferred playback', async () => {
+  const { audio, sources } = fixture();
+  audio.ensure = async () => true;
+  let finishLoading;
+  audio.loadClips = () => new Promise(resolve => { finishLoading = resolve; });
+  const pendingTest = audio.test();
+  await Promise.resolve();
+  audio.cancel(); finishLoading();
+  assert.equal(await pendingTest, false);
+  assert.equal(sources.length, 0);
+});
+test('audio test starts only after loading and aborts if context was suspended', async () => {
+  const { audio, ctx, sources } = fixture();
+  audio.ensure = async () => true;
+  let finishLoading;
+  audio.loadClips = () => new Promise(resolve => { finishLoading = resolve; });
+  const pendingTest = audio.test(); await Promise.resolve();
+  assert.equal(sources.length, 0);
+  ctx.state = 'suspended'; finishLoading();
+  assert.equal(await pendingTest, false); assert.equal(sources.length, 0);
+});

@@ -2,7 +2,7 @@
 export class AudioEngine {
   constructor(onState = () => {}) {
     this.ctx = null; this.onState = onState; this.nodes = new Set(); this.seen = new Map();
-    this.buffers = new Map(); this.revision = -1; this.pending = null; this.loadPromise = null;
+    this.buffers = new Map(); this.revision = -1; this.pending = null; this.loadPromise = null; this.generation = 0;
     this.settings = { sound: true, voice: true, volume: 0.55, gym: false };
   }
   configure(settings) { this.settings = { ...this.settings, ...settings }; if (this.master) this.master.gain.value = this.settings.volume; }
@@ -72,13 +72,16 @@ export class AudioEngine {
     }
   }
   cancel() {
+    this.generation++;
     for (const { source } of this.nodes) { try { source.stop(); } catch { /* Already ended. */ } }
     this.nodes.clear(); this.seen.clear();
   }
   async test() {
+    this.cancel(); const generation = this.generation;
     if (!await this.ensure()) return false;
-    await this.loadClips(); this.cancel();
-    if (this.ctx.state !== 'running') return false;
+    if (generation !== this.generation) return false;
+    await this.loadClips();
+    if (generation !== this.generation || this.ctx.state !== 'running') return false;
     this.beep(this.ctx.currentTime + 0.05); this.clip('partez', this.ctx.currentTime + 0.3); return true;
   }
 }

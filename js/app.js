@@ -84,8 +84,13 @@ async function launch(config) {
   if (starting) return; starting = true; $('#start').disabled = true; $('#again').disabled = true;
   try {
     audio.cancel(); audio.configure(settings);
-    const soundReady = settings.sound ? await audio.ensure() : false;
-    if (soundReady) void audio.loadClips();
+    let soundReady = settings.sound ? await audio.ensure() : false;
+    if (soundReady && settings.voice && !settings.gym) {
+      text('#start', 'Préparation du son…');
+      await audio.loadClips();
+      soundReady = audio.ctx?.state === 'running';
+    }
+    if (document.hidden) { toast('Reviens dans l’application puis relance la séance.'); return; }
     engine.start(config); lastConfig = { ...engine.config }; lastLapCount = -1;
     savedDraft = null; remove('active'); $('#recovery').hidden = true; write('config:' + config.mode, lastConfig);
     show('session'); $('#audio-alert').hidden = !settings.sound || soundReady; renderSession();
@@ -93,7 +98,7 @@ async function launch(config) {
     await wake.set(true); saveDraft();
     if (settings.sound && !soundReady) toast('Le minuteur fonctionne. Touche « Réactiver le son » pour les alertes.');
   } catch (e) { toast(e.message); }
-  finally { starting = false; $('#start').disabled = false; $('#again').disabled = false; }
+  finally { starting = false; $('#start').disabled = false; $('#again').disabled = false; text('#start', 'C’est parti ↗'); }
 }
 $('#setup').addEventListener('submit', e => { e.preventDefault(); if (savedDraft && !confirm('Remplacer la séance sauvegardée ?')) return; void launch(configFromForm()); });
 $('#again').addEventListener('click', () => { if (lastConfig) void launch({ ...lastConfig, ...{ precountSec: settings.precountSec, intervalSec: settings.intervalSec, warning3: settings.warning3 } }); });
