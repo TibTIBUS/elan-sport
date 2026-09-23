@@ -61,6 +61,19 @@ dt{color:var(--muted)} dd{margin:0;word-break:break-word}
 .state{font-size:1.1rem;color:var(--muted);text-align:right}
 #spark{width:100%;height:90px;margin-top:10px;background:var(--surface);border-radius:10px}
 pre{white-space:pre-wrap;background:var(--surface);border-radius:10px;padding:12px;font-size:.8rem;max-height:260px;overflow:auto}
+#guide{position:fixed;inset:0;z-index:10;background:var(--bg);display:flex;flex-direction:column;
+  padding:calc(env(safe-area-inset-top,0px) + 20px) 20px calc(env(safe-area-inset-bottom,0px) + 20px);overflow:auto}
+#guide[hidden]{display:none}
+#gStep{color:var(--sun);font-weight:700;font-size:.95rem;letter-spacing:.04em;text-transform:uppercase}
+#gTitle{font-size:2rem;line-height:1.15;margin:10px 0 8px;font-weight:800}
+#gSub{color:var(--muted);font-size:1.15rem;margin:0}
+#gCount{font-size:7rem;font-weight:800;color:var(--sun);line-height:1;margin:18px 0 0;text-align:center}
+#gCount:empty{display:none}
+#gBtns{margin-top:auto;display:flex;flex-direction:column;gap:4px}
+#gBtns button{min-height:72px;font-size:1.35rem}
+#guide .stage{width:min(100%,30vh);margin:12px auto 0;flex:none}
+#gAbort{background:none;border:0;color:var(--muted);min-height:44px;font-size:.95rem;margin-top:6px}
+.guideStart{min-height:96px;font-size:1.6rem}
 @media (prefers-reduced-motion:reduce){*{scroll-behavior:auto}}
 </style>
 </head>
@@ -71,7 +84,18 @@ pre{white-space:pre-wrap;background:var(--surface);border-radius:10px;padding:12
   <p>Étape 0 : mesurer ce que ton iPhone permet vraiment avant d'écrire l'app. Version <span id="ver"></span>.</p>
   <div class="banner" id="modeBanner" hidden>Tu es dans Safari. Pour les vrais tests : bouton Partager, « Sur l'écran d'accueil », puis ouvre Élan labo depuis l'icône.</div>
   <p class="help" id="restoreMsg" style="margin-top:12px"></p>
+  <button class="primary guideStart" id="guideStart">Lancer le test guidé</button>
+  <p class="help" id="guideInfo">Environ 10 minutes. Suis simplement les consignes. Pour mesurer le démarrage à froid, lance-le juste après avoir ouvert l'app.</p>
+  <p class="help">Les sections ci-dessous servent aux tests détaillés : tu n'en as pas besoin.</p>
 </header>
+<div id="guide" hidden role="dialog" aria-live="polite">
+  <div id="gStep"></div>
+  <div id="gTitle"></div>
+  <p id="gSub"></p>
+  <div id="gCount"></div>
+  <div id="gBtns"></div>
+  <button id="gAbort">Abandonner le test</button>
+</div>
 
 <section>
   <h2><span class="n">1</span>Ton iPhone et le contexte</h2>
@@ -205,7 +229,7 @@ pre{white-space:pre-wrap;background:var(--surface);border-radius:10px;padding:12
 </main>
 
 <script type="module">
-const VERSION = '0.0.5-labo';
+const VERSION = '0.0.6-labo';
 const MP_VERSION = '1.0.1';
 const MP_BASE = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VERSION}`;
 const MODELS = {
@@ -227,7 +251,7 @@ const pct = (arr, q) => { if (!arr.length) return null; const a = [...arr].sort(
 const r1 = (x) => x == null || !isFinite(x) ? null : Math.round(x * 10) / 10;
 const dl = (el, obj) => { el.innerHTML = Object.entries(obj).map(([k, v]) => `<dt>${k}</dt><dd>${v ?? '—'}</dd>`).join(''); };
 
-const R = { version: VERSION, mediapipe: MP_VERSION, openedAt: new Date().toISOString(), env: {}, audio: { tests: [] }, voice: { available: [], tests: [] }, clips: { tests: [] }, wake: null, interruptions: [], camera: { trials: [], minuteLog: [] }, log: [] };
+const R = { version: VERSION, mediapipe: MP_VERSION, openedAt: new Date().toISOString(), env: {}, audio: { tests: [] }, voice: { available: [], tests: [] }, clips: { tests: [] }, guided: [], wake: null, interruptions: [], camera: { trials: [], minuteLog: [] }, log: [] };
 function log(msg) {
   R.log.push(`${new Date().toLocaleTimeString('fr-FR')}  ${msg}`);
   if (R.log.length > 200) R.log.splice(0, 50);
@@ -254,7 +278,7 @@ function saveNow() {
     form.spotify = $('#spotify').checked;
     localStorage.setItem(STORE, JSON.stringify({
       savedAt: new Date().toISOString(), version: VERSION, form,
-      audio: R.audio.tests, voice: R.voice.tests, clips: R.clips.tests, interruptions: R.interruptions,
+      audio: R.audio.tests, voice: R.voice.tests, clips: R.clips.tests, guided: R.guided, interruptions: R.interruptions,
       wake: R.wake ? { ...R.wake, running: false } : null,
       camera: { trials: R.camera.trials, minuteLog: R.camera.minuteLog },
       log: R.log.slice(-80),
@@ -266,7 +290,7 @@ function restore() {
   try { d = JSON.parse(localStorage.getItem(STORE) || 'null'); } catch { d = null; }
   if (!d) return;
   for (const [id, v] of Object.entries(d.form || {})) { if (id === 'spotify') $('#spotify').checked = v; else if ($('#' + id) && v != null) $('#' + id).value = v; }
-  R.audio.tests = d.audio || []; R.voice.tests = d.voice || []; R.clips.tests = d.clips || []; R.interruptions = d.interruptions || [];
+  R.audio.tests = d.audio || []; R.voice.tests = d.voice || []; R.clips.tests = d.clips || []; R.guided = d.guided || []; R.interruptions = d.interruptions || [];
   R.wake = d.wake; R.camera.trials = d.camera?.trials || []; R.camera.minuteLog = d.camera?.minuteLog || [];
   R.log = d.log || [];
   const n = R.audio.tests.length + R.voice.tests.length + R.clips.tests.length + R.camera.trials.length;
@@ -334,7 +358,8 @@ function renderSession() {
 }
 renderSession();
 $('#session').addEventListener('change', () => { const t = applySession(); log('Session audio : ' + t); renderSession(); ctx?.resume(); });
-$('#unlock').addEventListener('click', async () => {
+$('#unlock').addEventListener('click', () => unlockAudio());
+async function unlockAudio() {
   const session = applySession();
   if (!ctx) {
     ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -350,7 +375,7 @@ $('#unlock').addEventListener('click', async () => {
   $('#unlock').textContent = 'Son activé';
   renderAudio();
   log('Son activé, session ' + session);
-});
+}
 $('#reactivate').addEventListener('click', () => ensureAudio('réactivation manuelle'));
 // Tentative de reprise uniquement sur geste explicite (démarrage d'un test, bouton « Réactiver le son ») ou retour au premier plan.
 async function ensureAudio(label) {
@@ -768,8 +793,8 @@ const C = { top: null, bottom: null, state: 'attente', reps: 0, lastRepAt: 0, st
 const TRIPLES = { poseElbow: [[11, 13, 15], [12, 14, 16]], poseKnee: [[23, 25, 27], [24, 26, 28]], poseHip: [[11, 23, 25], [12, 24, 26]] };
 const stableFrames = () => Math.max(3, Math.ceil(S.fps * 0.3));
 
-async function ensureDetector(kind) {
-  if (detector && detectorKind === kind) return;
+async function ensureDetector(kind, noStore = false) {
+  if (detector && detectorKind === kind && !noStore) return;
   const t0 = now();
   $('#camState').textContent = 'Chargement du modèle…';
   if (!vision) {
@@ -778,9 +803,12 @@ async function ensureDetector(kind) {
   }
   detector?.close?.(); detector = null;
   const { mp, fileset } = vision;
+  // Sans cache : le fichier du modèle est retéléchargé (cache: 'no-store') pour mesurer un démarrage à froid.
+  const buf = noStore ? new Uint8Array(await (await fetch(MODELS[kind], { cache: 'no-store' })).arrayBuffer()) : null;
+  const asset = (delegate) => (buf ? { modelAssetBuffer: buf, delegate } : { modelAssetPath: MODELS[kind], delegate });
   const make = (delegate) => kind === 'face'
-    ? mp.FaceDetector.createFromOptions(fileset, { baseOptions: { modelAssetPath: MODELS.face, delegate }, runningMode: 'VIDEO', minDetectionConfidence: 0.5 })
-    : mp.PoseLandmarker.createFromOptions(fileset, { baseOptions: { modelAssetPath: MODELS.pose, delegate }, runningMode: 'VIDEO', numPoses: 1 });
+    ? mp.FaceDetector.createFromOptions(fileset, { baseOptions: asset(delegate), runningMode: 'VIDEO', minDetectionConfidence: 0.5 })
+    : mp.PoseLandmarker.createFromOptions(fileset, { baseOptions: asset(delegate), runningMode: 'VIDEO', numPoses: 1 });
   try { detector = await make('GPU'); delegateUsed = 'GPU'; }
   catch (e) { log('GPU indisponible, passage au CPU : ' + e.message); detector = await make('CPU'); delegateUsed = 'CPU'; }
   detectorKind = kind; loadMs = Math.round(now() - t0);
@@ -791,18 +819,18 @@ function newTrial() {
   T = { id: uid(), startedAt: new Date().toISOString(), t0: now(), frames: 0, noDetect: 0, detectMs: [], inputLatencyMs: [], invalidatedCycles: 0, invalidations: {} };
 }
 
-$('#camStart').addEventListener('click', async () => {
-  const method = $('#method').value;
+$('#camStart').addEventListener('click', () => startCamera($('#method').value));
+async function startCamera(method, noStore = false) {
   $('#camStart').disabled = true;
   try {
     stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
     video.srcObject = stream; await video.play();
-    await ensureDetector(kindOf(method));
+    await ensureDetector(kindOf(method), noStore);
   } catch (e) {
     log('Caméra : ' + (e.message || e.name));
     stopCamera();
     $('#camState').innerHTML = `<span class="bad">Échec : ${e.message || e.name}</span>`;
-    return;
+    return false;
   }
   overlay.width = video.videoWidth; overlay.height = video.videoHeight;
   S = { method, fps: +$('#fps').value, startedAt: now(), signals: [], sigLog: [], recording: $('#record').checked ? [] : null, minuteFrames: 0, minuteDetect: [], minute: 0, warm: { ms: [], done: false } };
@@ -819,7 +847,8 @@ $('#camStart').addEventListener('click', async () => {
     S.minuteFrames = 0; S.minuteDetect = []; save();
   }, 60000);
   nextFrame();
-});
+  return true;
+}
 function nextFrame() {
   if (!running) return;
   if ('requestVideoFrameCallback' in video) video.requestVideoFrameCallback(onFrame); else requestAnimationFrame(onFrame);
@@ -846,6 +875,7 @@ function warmStep(dt) {
   w.done = true; w.ok = stable;
   w.summary = { frames: w.ms.length, firstMs: Math.round(w.ms[0]), maxMs: Math.round(Math.max(...w.ms)), totalMs: Math.round(w.ms.reduce((a, b) => a + b, 0)), stableMedianMs: r1(pct(last, 0.5)), ok: stable };
   log(`Préchauffage ${stable ? 'terminé' : 'NON stabilisé'} : ${w.summary.frames} analyses, première ${w.summary.firstMs} ms, max ${w.summary.maxMs} ms, total ${w.summary.totalMs} ms`);
+  if (camBeeper) camBeeper.stats.maxLoopGapMs = 0; // les blocages mesurés ensuite sont ceux après stabilisation
   ['#calibrate', '#resetReps', '#stillTest', '#saveTrial', '#tapTest'].forEach((b) => ($(b).disabled = false));
   newTrial(); showState();
 }
@@ -967,7 +997,8 @@ async function captureStable(token, maxMs) {
   }
   return null;
 }
-$('#calibrate').addEventListener('click', async () => {
+$('#calibrate').addEventListener('click', () => runCalibration());
+async function runCalibration() {
   const token = ++calToken;
   $('#calibrate').disabled = true;
   if (ctx) await ensureAudio('calibration'); // une tentative sur ton geste, pas pendant les annonces
@@ -993,7 +1024,8 @@ $('#calibrate').addEventListener('click', async () => {
   }
   if (running) $('#calibrate').disabled = false;
   showState();
-});
+  return C.top != null && C.bottom != null;
+}
 
 function cancelStill() { if (C.still) { clearTimeout(C.still.timer); C.still = null; } }
 function resetCounter(full) {
@@ -1093,6 +1125,205 @@ $('#exportRec').addEventListener('click', async () => {
   } catch (e) { log('Export : ' + e.message); }
 });
 
+/* ---------- Test guidé ---------- */
+// Tout le protocole en un seul parcours : consignes à l'écran, réponses par gros boutons, mesures automatiques.
+const GRUNS = 'elan-labo-guided-runs';
+let G = null;
+class Abort extends Error {}
+function gShow(step, title, sub = '', count = '') {
+  $('#gStep').textContent = step; $('#gTitle').textContent = title; $('#gSub').textContent = sub;
+  $('#gCount').textContent = count; $('#gBtns').innerHTML = '';
+}
+function gAsk(options) {
+  return new Promise((resolve, reject) => {
+    const box = $('#gBtns'); box.innerHTML = '';
+    options.forEach((label, i) => {
+      const b = document.createElement('button');
+      b.textContent = label; if (i === 0) b.className = 'primary';
+      b.addEventListener('click', () => resolve(label));
+      box.appendChild(b);
+    });
+    G.reject = reject;
+  });
+}
+const gCheck = () => { if (G.aborted) throw new Abort(); };
+const gSleep = async (ms) => { const end = now() + ms; while (now() < end) { gCheck(); await sleep(Math.min(200, end - now())); } };
+// Mesure du gel de l'écran : plus long intervalle entre deux images affichées.
+function freezeMonitor() {
+  const m = { max: 0, last: now(), on: true };
+  const tick = () => { if (!m.on) return; const t = now(); m.max = Math.max(m.max, t - m.last); m.last = t; requestAnimationFrame(tick); };
+  requestAnimationFrame(tick);
+  return { stop: () => { m.on = false; return Math.round(m.max); } };
+}
+async function gNumber(prompt) {
+  gShow(G.step, prompt, 'Touche le bon nombre.');
+  const a = await gAsk(['8', '9', '10', '11', '12', 'Autre']);
+  if (a !== 'Autre') return +a;
+  const v = parseInt(window.prompt('Combien de pompes as-tu faites ?') || '', 10);
+  return Number.isFinite(v) ? v : null;
+}
+async function gSeries(label, speed) {
+  newTrial(); resetCounter(false);
+  G.step = `Série ${speed === 'Rapide' ? 2 : 1} sur 2`;
+  gShow(G.step, `Fais 10 pompes ${label}`, 'Reste en position haute à la fin. Touche « J\'ai fini » si ça ne s\'arrête pas seul.', '0');
+  playClip('partez', PRIO.signal);
+  let done = false; gAsk(["J'ai fini"]).then(() => { done = true; }, () => {});
+  let last = 0, lastChange = now(); const start = now();
+  while (!done) {
+    await gSleep(200);
+    if (C.reps !== last) { last = C.reps; lastChange = now(); $('#gCount').textContent = C.reps; }
+    const idle = now() - lastChange;
+    if ((C.reps >= 10 && idle > 2500) || (C.reps > 0 && idle > 8000) || now() - start > 120000) break;
+  }
+  const counted = C.reps;
+  gShow(G.step, `L'app a compté ${counted}.`, 'As-tu bien fait 10 pompes ?', String(counted));
+  const a = await gAsk(['Oui, 10', 'Non']);
+  const real = a === 'Oui, 10' ? 10 : await gNumber('Combien en as-tu fait ?');
+  const t = { type: 'série', guided: true, ...trialBase(), speed, counted, real, error: real == null ? null : counted - real };
+  R.camera.trials.push(t); G.series.push({ speed, counted, real, error: t.error, invalidatedCycles: t.invalidatedCycles, noDetectPct: t.noDetectPct, detectMaxMs: t.detectMs.max });
+  renderTrials(); save();
+}
+async function guidedRun() {
+  const runs = (+localStorage.getItem(GRUNS) || 0) + 1;
+  localStorage.setItem(GRUNS, String(runs));
+  G = { id: uid(), run: runs, startedAt: new Date().toISOString(), coldFetch: runs === 1, aborted: false, series: [], answers: {} };
+  $('#guide').hidden = false;
+  const stage = $('.stage'), stageHome = stage.parentNode, stageNext = stage.nextSibling;
+  try {
+    // 1. Son (ambient) et musique
+    G.step = 'Étape 1 sur 6 · Son';
+    $('#session').value = 'ambient';
+    await unlockAudio();
+    gShow(G.step, 'Lance ta musique sur Spotify, puis reviens ici.', 'On vérifie que l\'app ne la coupe pas.');
+    G.answers.music = await gAsk(['Musique lancée', 'Je teste sans musique']);
+    $('#spotify').checked = G.answers.music === 'Musique lancée';
+    if (!(await ensureAudio('test guidé'))) { gShow(G.step, 'Le son de l\'app est bloqué.', 'Touche « Réessayer ».'); await gAsk(['Réessayer']); await ensureAudio('test guidé'); }
+    if (!clipBuf.n1) await loadClips();
+
+    // 2. Préparation caméra (démarrage à froid mesuré)
+    G.step = 'Étape 2 sur 6 · Préparation';
+    gShow(G.step, 'Préparation de la caméra…', G.coldFetch ? 'Premier essai : modèle retéléchargé sans cache. Ne touche à rien.' : 'Ne touche à rien.');
+    const fm = freezeMonitor(); const t0 = now();
+    $('#gCount').after(stage); // aperçu caméra dans l'écran guidé
+    $('#repClips').checked = true; $('#camBeeps').checked = true;
+    const ok = await startCamera('face', G.coldFetch);
+    if (!ok) throw new Error('caméra indisponible');
+    while (!S.warm.done) await gSleep(100);
+    G.prep = { coldFetch: G.coldFetch, modelLoadMs: loadMs, untilStableMs: Math.round(now() - t0), warmup: S.warm.summary, screenFreezeMaxMs: fm.stop(), delegate: delegateUsed };
+    log(`Test guidé : préparation ${G.prep.untilStableMs} ms, écran figé max ${G.prep.screenFreezeMaxMs} ms`);
+    if (!S.warm.ok) {
+      gShow(G.step, 'La caméra n\'est pas stable.', 'Le comptage automatique serait peu fiable : l\'app passerait en comptage manuel.');
+      G.answers.unstable = await gAsk(['Continuer quand même', 'Arrêter']);
+      if (G.answers.unstable === 'Arrêter') throw new Abort();
+    }
+    G.analysisStart = now();
+
+    // 3. Calibration
+    G.step = 'Étape 3 sur 6 · Calibration';
+    for (let tries = 1; ; tries++) {
+      gShow(G.step, 'Pose le téléphone à plat au sol, devant ta tête, entre tes mains.', 'Mets-toi en position de pompe, bras tendus. La voix te guide : tiens chaque position jusqu\'au bip aigu.');
+      await gAsk(['Je suis prêt']);
+      gShow(G.step, 'Écoute la voix…', 'Haut, puis bas.');
+      if (await runCalibration()) { G.calibration = { tries, top: r1(C.top * 100), bottom: r1(C.bottom * 100) }; break; }
+      gShow(G.step, 'Calibration ratée.', 'Vérifie que ton visage est bien visible, puis recommence.');
+      if (tries >= 3) { await gAsk(['Continuer sans calibration']); G.calibration = { tries, failed: true }; break; }
+      await gAsk(['Recommencer']);
+    }
+
+    // 4. Deux séries + réactivité (caméra toujours active)
+    if (!G.calibration.failed) {
+      await gSeries('à ton rythme', 'Normale');
+      gShow('Pause', 'Souffle un peu.', 'Prêt pour une série rapide ?');
+      await gAsk(['Prêt']);
+      await gSeries('rapidement', 'Rapide');
+    }
+    G.step = 'Étape 4 sur 6 · Réactivité';
+    newTrial();
+    gShow(G.step, 'Tapote le gros bouton 10 fois.', 'On mesure si l\'écran réagit vite pendant que la caméra travaille.', '0');
+    await new Promise((resolve, reject) => {
+      G.reject = reject;
+      const box = $('#gBtns'); box.innerHTML = '';
+      const b = document.createElement('button'); b.className = 'primary'; b.textContent = 'Tape ici'; b.style.minHeight = '160px';
+      let n = 0;
+      b.addEventListener('pointerdown', (e) => {
+        const t0 = e.timeStamp; n++; $('#gCount').textContent = n;
+        requestAnimationFrame(() => { const lat = now() - t0; if (lat >= 0 && lat < 5000) T.inputLatencyMs.push(lat); if (n >= 10) resolve(); });
+      });
+      box.appendChild(b);
+    });
+    G.reactivity = { p50: r1(pct(T.inputLatencyMs, 0.5)), p95: r1(pct(T.inputLatencyMs, 0.95)), max: r1(Math.max(...T.inputLatencyMs)), n: T.inputLatencyMs.length };
+    G.analysis = { durationS: Math.round((now() - G.analysisStart) / 1000), detectMaxMs: r1(Math.max(...S.minuteDetect.concat(T.detectMs))), beeps: camBeeper ? { scheduled: camBeeper.stats.scheduled, dropped: camBeeper.stats.dropped, maxLoopGapMs: r1(camBeeper.stats.maxLoopGapMs) } : null };
+    stopCamera();
+
+    // 5. Écoute des clips
+    G.step = 'Étape 5 sur 6 · Écoute';
+    gShow(G.step, 'Écoute les nombres.', 'D\'abord lentement, puis très vite comme en comptage rapide.');
+    await gSleep(800);
+    let t = ctx.currentTime + 0.2;
+    for (let i = 1; i <= 5; i++) playClip('n' + i, PRIO.count, t + (i - 1) * 1.1);
+    await gSleep(6500);
+    for (let i = 1; i <= 10; i++) { playClip('n' + i, PRIO.count); await gSleep(350); }
+    await gSleep(1200);
+    gShow(G.step, 'Les nombres étaient-ils compréhensibles ?', '');
+    G.answers.numbers = await gAsk(['Oui, tous', 'Oui lentement, hachés en rapide', 'Non']);
+    gShow(G.step, 'Écoute encore.', 'Une phrase d\'encouragement va être coupée.');
+    await gSleep(800);
+    t = ctx.currentTime + 0.2; playClip('enc2', PRIO.encouragement, t); playClip('repos', PRIO.signal, t + 0.8);
+    await gSleep(3000);
+    gShow(G.step, 'As-tu entendu « Repos » couper la phrase ?', '');
+    G.answers.priority = await gAsk(['Oui', 'Non', 'Pas sûr']);
+    if (G.answers.music === 'Musique lancée') {
+      gShow(G.step, 'Ta musique a-t-elle continué pendant tout le test ?', '');
+      G.answers.musicKept = await gAsk(['Oui, sans coupure', 'Elle a baissé', 'Elle s\'est coupée']);
+    }
+
+    // 6. Verrouillage
+    G.step = 'Étape 6 sur 6 · Verrouillage';
+    sim = new SimSession(); sim.start();
+    gShow(G.step, 'Verrouille ton téléphone maintenant.', 'Attends 3 minutes (musique en fond si tu veux), puis déverrouille et reviens ici.');
+    const before = R.interruptions.length;
+    while (!(R.interruptions.length > before && !document.hidden)) await gSleep(300);
+    const back = R.interruptions.at(-1);
+    await gSleep(3000);
+    gShow(G.step, 'Au retour, as-tu entendu un ancien son rejoué ou une rafale ?', `Verrouillé pendant ${Math.round(back.hiddenS)} s.`);
+    G.answers.afterLock = await gAsk(['Non, reprise normale', 'Oui, un son ancien ou une rafale', 'Plus aucun son']);
+    G.lock = { hiddenS: back.hiddenS, monoMinusWallMs: back.monoMinusWallMs, audioStateOnReturn: back.audioStateOnReturn, staleDropped: sim.stats.staleDropped, cancelledOnHide: sim.stats.cancelledOnHide, blockedLoops: sim.stats.blockedLoops, audioNow: ctx.state };
+    sim.stop();
+    G.status = 'terminé';
+  } catch (e) {
+    G.status = e instanceof Abort ? 'abandonné' : 'erreur : ' + (e.message || e);
+    log('Test guidé ' + G.status);
+    if (running) stopCamera();
+    if (sim) sim.stop();
+  }
+  stageHome.insertBefore(stage, stageNext); // remettre l'aperçu à sa place
+  G.endedAt = new Date().toISOString();
+  delete G.reject; delete G.aborted; delete G.analysisStart; delete G.step;
+  R.guided.push(G); saveNow();
+  gShow('Fin', G.status === 'terminé' ? 'Test terminé, merci !' : `Test ${G.status}.`, 'Copie le résultat et colle-le dans la conversation.');
+  const a = await new Promise((resolve) => {
+    const box = $('#gBtns'); box.innerHTML = '';
+    for (const [label, cls] of [['Copier le résultat', 'primary'], ['Fermer', '']]) {
+      const b = document.createElement('button'); b.textContent = label; b.className = cls;
+      b.addEventListener('click', () => resolve(label)); box.appendChild(b);
+    }
+  });
+  if (a === 'Copier le résultat') {
+    try { await navigator.clipboard.writeText(buildReport()); gShow('Fin', 'Copié.', 'Colle-le dans la conversation.'); }
+    catch { gShow('Fin', 'Copie impossible.', 'Utilise « Partager le rapport » en bas de la page.'); }
+    await sleep(1500);
+  }
+  $('#guide').hidden = true; G = null;
+}
+$('#guideStart').addEventListener('click', () => { if (!G) guidedRun(); });
+$('#gAbort').addEventListener('click', () => { if (G && confirm('Abandonner le test guidé ?')) { G.aborted = true; G.reject?.(new Abort()); } });
+{
+  const runs = +localStorage.getItem(GRUNS) || 0;
+  $('#guideInfo').textContent = runs === 0
+    ? 'Premier essai : démarrage à froid (modèle retéléchargé). Environ 10 minutes, suis simplement les consignes.'
+    : `Essai n° ${runs + 1} : ferme d'abord complètement l'app (balayage vers le haut), rouvre-la, puis lance le test tout de suite.`;
+}
+
 /* ---------- 7. Rapport ---------- */
 function buildReport() {
   Object.assign(R.env, { iphone: $('#model').value || 'non renseigné', iosDeclared: $('#iosManual').value || 'non renseignée' });
@@ -1102,6 +1333,17 @@ function buildReport() {
   const lines = [
     `ÉLAN, rapport labo ${VERSION} (MediaPipe ${MP_VERSION})`,
     `${R.env.iphone}, iOS ${R.env.iosDeclared}, ${R.env.mode}`,
+    ...R.guided.flatMap((g) => [
+      `— TEST GUIDÉ n° ${g.run} (${g.status})${g.coldFetch ? ' : modèle retéléchargé sans cache' : ' : après fermeture complète'}`,
+      g.prep ? `Préparation : chargement ${g.prep.modelLoadMs} ms, prêt en ${g.prep.untilStableMs} ms, préchauffage ${g.prep.warmup?.frames} analyses (1re ${g.prep.warmup?.firstMs} ms, max ${g.prep.warmup?.maxMs} ms${g.prep.warmup?.ok ? '' : ', NON STABLE'}), écran figé max ${g.prep.screenFreezeMaxMs} ms, ${g.prep.delegate}` : 'Préparation : —',
+      g.calibration ? `Calibration : ${g.calibration.failed ? 'échec' : `haut ${g.calibration.top} %, bas ${g.calibration.bottom} %`} (${g.calibration.tries} essai(s))` : 'Calibration : —',
+      ...g.series.map((x) => `Série ${x.speed} : ${x.counted} comptées / ${x.real ?? '?'} réelles, ${x.invalidatedCycles} cycle(s) annulé(s), sans détection ${x.noDetectPct} %, analyse max ${x.detectMaxMs} ms`),
+      g.reactivity ? `Réactivité : p50 ${g.reactivity.p50} ms, p95 ${g.reactivity.p95} ms, max ${g.reactivity.max} ms (${g.reactivity.n} appuis)` : 'Réactivité : —',
+      g.analysis ? `Analyse continue ${g.analysis.durationS} s : analyse max ${g.analysis.detectMaxMs} ms, bips ${g.analysis.beeps ? `${g.analysis.beeps.scheduled} programmés, ${g.analysis.beeps.dropped} abandonnés, blocage JS max ${g.analysis.beeps.maxLoopGapMs} ms` : 'aucun'}` : 'Analyse continue : —',
+      `Écoute : nombres « ${g.answers.numbers ?? '—'} », priorité « ${g.answers.priority ?? '—'} », musique « ${g.answers.musicKept ?? g.answers.music ?? '—'} »`,
+      g.lock ? `Verrouillage ${Math.round(g.lock.hiddenS)} s : « ${g.answers.afterLock} », ${g.lock.staleDropped} événements périmés écartés, ${g.lock.cancelledOnHide} sons annulés, audio au retour ${g.lock.audioStateOnReturn} → ${g.lock.audioNow}, mono−civile ${g.lock.monoMinusWallMs} ms` : 'Verrouillage : —',
+    ]),
+    '— DÉTAIL DES AUTRES TESTS',
     'Note : les mesures audio portent sur la programmation des bips, pas sur l\'instant où le son est entendu.',
     `Moteur audio : ${R.audio.stateChanges ?? 0} changements d'état, ${R.audio.resumes ?? 0} relances`,
     ...R.audio.tests.map((t) => `Bips « ${t.test} » | ${t.session}, ${t.audioOutput}, ${t.ringSwitch}, Spotify ${yn(t.spotify)} | ${t.scheduled} programmés, ${t.dropped} abandonnés, blocage max ${t.maxLoopGapMs} ms | entendu : ${t.heard}`),
