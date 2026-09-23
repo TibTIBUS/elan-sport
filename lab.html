@@ -98,6 +98,7 @@ pre{white-space:pre-wrap;background:var(--surface);border-radius:10px;padding:12
     <option value="ambient">ambient : se mélange à la musique, respecte le mode silencieux</option>
     <option value="playback">playback : sonne même en silencieux, peut couper la musique</option>
   </select>
+  <p class="help" id="sessionNote" style="margin-top:8px"></p>
   <button class="primary" id="unlock">Activer le son</button>
   <button id="beepTest" disabled>Bips 1 par seconde pendant 20 s</button>
   <button id="beepStop" disabled>Arrêter les bips</button>
@@ -123,7 +124,25 @@ pre{white-space:pre-wrap;background:var(--surface);border-radius:10px;padding:12
 </section>
 
 <section>
-  <h2><span class="n">4</span>Veille et écran allumé</h2>
+  <h2><span class="n">4</span>Voix enregistrée</h2>
+  <p class="help">Clips pré-enregistrés joués par le même moteur que les bips, pour ne pas couper la musique. Active d'abord le son (section 2), lance Spotify, puis charge les clips.</p>
+  <button class="primary" id="clipLoad" disabled>Charger les clips</button>
+  <button id="clipCount" disabled>Compter de 1 à 10</button>
+  <button id="clipFast" disabled>Comptage rapide : 10 répétitions en 3,5 s</button>
+  <button id="clipPrio" disabled>Encouragement interrompu par « Repos »</button>
+  <button id="clipPause" disabled>Pause pendant une phrase</button>
+  <button id="simStart" disabled>Séance simulée (test de verrouillage)</button>
+  <button id="simStop" disabled>Arrêter la séance simulée</button>
+  <p class="help">Séance simulée : un bip par seconde, un nombre toutes les 3 s, un encouragement toutes les 15 s. Pendant qu'elle tourne, verrouille le téléphone 3 à 5 min puis reviens : aucun ancien son ne doit être rejoué, la séance reprend à l'heure.</p>
+  <dl id="clipStats"></dl>
+  <label for="heardClips">Ce que tu as entendu au dernier test</label>
+  <select id="heardClips" class="res clipRes"></select>
+  <button id="noteClips" disabled>Noter pour ce test</button>
+  <pre id="clipList" hidden></pre>
+</section>
+
+<section>
+  <h2><span class="n">5</span>Veille et écran allumé</h2>
   <p class="help">Lance le test, pose le téléphone 15 min sans y toucher. Ensuite, verrouille-le 30 s puis reviens, deux ou trois fois.</p>
   <button class="primary" id="wakeStart">Démarrer le test de 15 min</button>
   <button id="wakeStop" disabled>Arrêter le test</button>
@@ -131,7 +150,7 @@ pre{white-space:pre-wrap;background:var(--surface);border-radius:10px;padding:12
 </section>
 
 <section>
-  <h2><span class="n">5</span>Caméra et comptage</h2>
+  <h2><span class="n">6</span>Caméra et comptage</h2>
   <p class="help">Pompes, méthode visage : téléphone à plat au sol, écran vers le haut, devant ta tête entre tes mains. Autres méthodes : téléphone debout, calé, de profil. « Calibrer » te guide à la voix : mets-toi en position haute, ne bouge plus, puis en position basse et tiens-la jusqu'au bip aigu. Ensuite fais une série et note le vrai nombre.</p>
   <div class="row">
     <div><label for="method">Méthode</label>
@@ -145,6 +164,7 @@ pre{white-space:pre-wrap;background:var(--surface);border-radius:10px;padding:12
       <select id="fps"><option>10</option><option selected>15</option><option>24</option></select></div>
   </div>
   <label class="check"><input type="checkbox" id="camBeeps" checked> Bips 1 par seconde pendant l'analyse</label>
+  <label class="check"><input type="checkbox" id="repClips"> Annoncer les répétitions avec les clips (section 4)</label>
   <label class="check"><input type="checkbox" id="record"> Enregistrer les points détectés (pour les tests automatiques)</label>
   <button class="primary" id="camStart">Démarrer la caméra</button>
   <button id="camStop" disabled>Arrêter la caméra</button>
@@ -169,7 +189,7 @@ pre{white-space:pre-wrap;background:var(--surface);border-radius:10px;padding:12
 </section>
 
 <section>
-  <h2><span class="n">6</span>Rapport</h2>
+  <h2><span class="n">7</span>Rapport</h2>
   <p class="help">Les résultats sont sauvegardés au fur et à mesure sur le téléphone. Copie le rapport et colle-le dans la conversation.</p>
   <label for="notes">Remarques (chauffe, lumière, ressenti…)</label>
   <textarea id="notes"></textarea>
@@ -183,7 +203,7 @@ pre{white-space:pre-wrap;background:var(--surface);border-radius:10px;padding:12
 </main>
 
 <script type="module">
-const VERSION = '0.0.2-labo';
+const VERSION = '0.0.3-labo';
 const MP_VERSION = '1.0.1';
 const MP_BASE = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VERSION}`;
 const MODELS = {
@@ -194,7 +214,8 @@ const STORE = 'elan-labo-resultats';
 const LOOKAHEAD_S = 2;
 const STALE_S = 0.02; // un bip prévu moins de 20 ms dans le futur est considéré périmé
 const HEARD = ['Non noté', 'OK, musique continue', 'OK, sans musique', 'Musique baissée pendant le son', 'Musique coupée', 'Aucun son entendu', 'Bips irréguliers ou en rafale'];
-const HEARD_VOICE = [...HEARD, 'Bips décalés ou manquants pendant la voix', 'Voix coupée par les bips'];
+const HEARD_VOICE = [...HEARD, 'Musique coupée puis reprise seule', 'Musique coupée, ne reprend pas', 'Bips décalés ou manquants pendant la voix', 'Voix coupée par les bips'];
+const HEARD_CLIPS = [...HEARD, 'Clips nets, comportement attendu', 'Nombres empilés ou en retard', 'Clip tronqué alors qu\'il ne devait pas', 'Ancien son rejoué au retour'];
 const FORM_FIELDS = ['model', 'iosManual', 'output', 'silent', 'session', 'method', 'fps', 'notes'];
 
 const $ = (s) => document.querySelector(s);
@@ -204,7 +225,7 @@ const pct = (arr, q) => { if (!arr.length) return null; const a = [...arr].sort(
 const r1 = (x) => x == null || !isFinite(x) ? null : Math.round(x * 10) / 10;
 const dl = (el, obj) => { el.innerHTML = Object.entries(obj).map(([k, v]) => `<dt>${k}</dt><dd>${v ?? '—'}</dd>`).join(''); };
 
-const R = { version: VERSION, mediapipe: MP_VERSION, openedAt: new Date().toISOString(), env: {}, audio: { tests: [] }, voice: { available: [], tests: [] }, wake: null, interruptions: [], camera: { trials: [], minuteLog: [] }, log: [] };
+const R = { version: VERSION, mediapipe: MP_VERSION, openedAt: new Date().toISOString(), env: {}, audio: { tests: [] }, voice: { available: [], tests: [] }, clips: { tests: [] }, wake: null, interruptions: [], camera: { trials: [], minuteLog: [] }, log: [] };
 function log(msg) {
   R.log.push(`${new Date().toLocaleTimeString('fr-FR')}  ${msg}`);
   if (R.log.length > 200) R.log.splice(0, 50);
@@ -231,7 +252,7 @@ function saveNow() {
     form.spotify = $('#spotify').checked;
     localStorage.setItem(STORE, JSON.stringify({
       savedAt: new Date().toISOString(), version: VERSION, form,
-      audio: R.audio.tests, voice: R.voice.tests, interruptions: R.interruptions,
+      audio: R.audio.tests, voice: R.voice.tests, clips: R.clips.tests, interruptions: R.interruptions,
       wake: R.wake ? { ...R.wake, running: false } : null,
       camera: { trials: R.camera.trials, minuteLog: R.camera.minuteLog },
       log: R.log.slice(-80),
@@ -243,10 +264,10 @@ function restore() {
   try { d = JSON.parse(localStorage.getItem(STORE) || 'null'); } catch { d = null; }
   if (!d) return;
   for (const [id, v] of Object.entries(d.form || {})) { if (id === 'spotify') $('#spotify').checked = v; else if ($('#' + id) && v != null) $('#' + id).value = v; }
-  R.audio.tests = d.audio || []; R.voice.tests = d.voice || []; R.interruptions = d.interruptions || [];
+  R.audio.tests = d.audio || []; R.voice.tests = d.voice || []; R.clips.tests = d.clips || []; R.interruptions = d.interruptions || [];
   R.wake = d.wake; R.camera.trials = d.camera?.trials || []; R.camera.minuteLog = d.camera?.minuteLog || [];
   R.log = d.log || [];
-  const n = R.audio.tests.length + R.voice.tests.length + R.camera.trials.length;
+  const n = R.audio.tests.length + R.voice.tests.length + R.clips.tests.length + R.camera.trials.length;
   $('#restoreMsg').textContent = `${n} essai(s) restauré(s), sauvegardés le ${new Date(d.savedAt).toLocaleString('fr-FR')}.`;
   log(`Résultats restaurés (${n} essais)`);
 }
@@ -261,7 +282,7 @@ $('#clearAll').addEventListener('click', () => {
 
 /* ---------- 1. Environnement ---------- */
 $('#ver').textContent = VERSION;
-document.querySelectorAll('select.res').forEach((s) => { s.innerHTML = (s.classList.contains('voiceRes') ? HEARD_VOICE : HEARD).map((r) => `<option>${r}</option>`).join(''); });
+document.querySelectorAll('select.res').forEach((s) => { s.innerHTML = (s.classList.contains('voiceRes') ? HEARD_VOICE : s.classList.contains('clipRes') ? HEARD_CLIPS : HEARD).map((r) => `<option>${r}</option>`).join(''); });
 const uaIos = (navigator.userAgent.match(/OS (\d+)_(\d+)(?:_(\d+))?/) || []).slice(1).filter(Boolean).join('.') || 'inconnue';
 const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
 $('#modeBanner').hidden = standalone;
@@ -301,7 +322,13 @@ function applySession() {
   try { navigator.audioSession.type = $('#session').value; } catch (e) { log('audioSession : ' + e.message); }
   return navigator.audioSession.type;
 }
-$('#session').addEventListener('change', () => { const t = applySession(); log('Session audio : ' + t); ctx?.resume(); });
+function renderSession() {
+  const s = 'audioSession' in navigator ? navigator.audioSession.type : 'non supporté';
+  const note = s === 'ambient' ? 'Se mélange à la musique. En mode silencieux, l\'app est muette.' : s === 'playback' ? 'Sonne même en mode silencieux.' : 'Choisis un type puis active le son.';
+  $('#sessionNote').innerHTML = `Session active : <strong>${s}</strong>. ${note}`;
+}
+renderSession();
+$('#session').addEventListener('change', () => { const t = applySession(); log('Session audio : ' + t); renderSession(); ctx?.resume(); });
 $('#unlock').addEventListener('click', async () => {
   const session = applySession();
   if (!ctx) {
@@ -313,7 +340,8 @@ $('#unlock').addEventListener('click', async () => {
   R.audio.sampleRate = ctx.sampleRate;
   R.audio.baseLatencyMs = r1(ctx.baseLatency * 1000);
   R.audio.outputLatencyMs = r1(ctx.outputLatency * 1000);
-  ['#beepTest', '#voiceTest', '#voiceBeeps'].forEach((s) => ($(s).disabled = false));
+  ['#beepTest', '#voiceTest', '#voiceBeeps', '#clipLoad'].forEach((s) => ($(s).disabled = false));
+  renderSession();
   $('#unlock').textContent = 'Son activé';
   renderAudio();
   log('Son activé, session ' + session);
@@ -360,6 +388,11 @@ class BeepScheduler {
       this.stats.minLeadMs = Math.min(this.stats.minLeadMs, (when - cur) * 1000);
       this.stats.scheduled++; this.k++; this.lastWhen = when;
     }
+  }
+  cancelPending() {
+    let n = 0;
+    for (const o of this.nodes) { try { o.stop(0); o.disconnect(); n++; } catch {} }
+    this.nodes.clear(); this.stats.cancelledOnHide = (this.stats.cancelledOnHide || 0) + n;
   }
   finishScheduling() {
     clearInterval(this.timer); this.timer = null;
@@ -459,7 +492,167 @@ $('#noteVoice').addEventListener('click', () => {
   t.heard = $('#heardVoice').value; save(); renderVoice(); log(`Noté pour « ${t.test} » : ${t.heard}`);
 });
 
-/* ---------- 4. Veille et Wake Lock ---------- */
+
+/* ---------- 4. Clips vocaux ---------- */
+// Priorités : un signal interrompt tout ; un nombre plus récent remplace l'ancien ; un encouragement ne coupe jamais rien.
+const PRIO = { encouragement: 0, count: 1, goal: 2, signal: 3 };
+const clipBuf = {};
+const activeClips = new Set(); // { src, id, prio, start, end }
+let clipTest = null, sim = null;
+const cstat = (k, n = 1) => { if (clipTest) clipTest[k] = (clipTest[k] || 0) + n; };
+async function loadClips() {
+  const t0 = now(), base = './audio/clips/';
+  const res = await fetch(base + 'manifest.json', { cache: 'no-cache' });
+  if (!res.ok) throw new Error(`clips introuvables (${res.status}) : l'Action de génération n'a pas encore tourné`);
+  const man = await res.json();
+  const ids = Object.keys(man.clips);
+  await Promise.all(ids.map(async (id) => {
+    const r = await fetch(base + man.clips[id].file);
+    if (!r.ok) throw new Error('fichier manquant : ' + man.clips[id].file);
+    clipBuf[id] = await ctx.decodeAudioData(await r.arrayBuffer());
+  }));
+  Object.assign(R.clips, { loadMs: Math.round(now() - t0), count: ids.length, voice: man.voice, generator: man.generator, modelSha256: man.modelSha256 });
+}
+function playClip(id, prio, when = ctx.currentTime) {
+  const buf = clipBuf[id];
+  if (!buf) { beep(when); cstat('fallbackBeep'); return null; } // repli : bip, jamais la synthèse vocale
+  when = Math.max(when, ctx.currentTime);
+  const end = when + buf.duration;
+  for (const a of [...activeClips]) {
+    if (!(a.start < end && a.end > when)) continue;
+    if (a.prio > prio || (a.prio === prio && prio === PRIO.encouragement)) { cstat('dropped'); return null; }
+    try { a.src.stop(Math.max(when, ctx.currentTime)); } catch {}
+    cstat(a.start < when ? 'interrupted' : 'replaced');
+    a.end = when; if (a.start >= when) activeClips.delete(a);
+  }
+  const src = ctx.createBufferSource(); src.buffer = buf; src.connect(ctx.destination); src.start(when);
+  const a = { src, id, prio, start: when, end };
+  activeClips.add(a); src.onended = () => activeClips.delete(a);
+  cstat('played');
+  return a;
+}
+function stopAllClips() {
+  let n = 0;
+  for (const a of activeClips) { try { a.src.stop(0); n++; } catch {} }
+  activeClips.clear();
+  return n;
+}
+function startClipTest(name) {
+  if (clipTest) finishClipTest('remplacé');
+  clipTest = { id: uid(), kind: 'clips', test: name, ...context(), played: 0, interrupted: 0, replaced: 0, dropped: 0, cancelled: 0, heard: 'Non noté' };
+  log('Test clips : ' + name);
+}
+function finishClipTest(end = 'terminé') {
+  if (!clipTest) return;
+  const t = { ...clipTest, end, endedAt: new Date().toISOString() };
+  clipTest = null;
+  R.clips.tests.push(t); save(); renderClips(); $('#noteClips').disabled = false;
+  log(`Test clips « ${t.test} » ${end} : ${t.played} joués, ${t.interrupted} interrompus, ${t.replaced} remplacés, ${t.dropped} écartés`);
+}
+function renderClips() {
+  dl($('#clipStats'), {
+    'Clips chargés': R.clips.count ? `${R.clips.count} en ${R.clips.loadMs} ms (${R.clips.voice})` : 'non chargés',
+    'Séance simulée': sim ? `${Math.round((now() - sim.startMono) / 1000)} s, ${sim.stats.staleDropped} événements périmés écartés, ${sim.stats.cancelledOnHide} sons annulés au masquage` : 'arrêtée',
+  });
+  const el = $('#clipList'); el.hidden = !R.clips.tests.length;
+  el.textContent = R.clips.tests.map((t) => `${t.test} | ${t.session}, ${t.audioOutput}, Spotify ${t.spotify ? 'oui' : 'non'} | joués ${t.played}, interrompus ${t.interrupted}, remplacés ${t.replaced}, écartés ${t.dropped}${t.staleDropped != null ? `, périmés ${t.staleDropped}` : ''} | ${t.heard}`).join('\n');
+}
+renderClips();
+const clipButtons = ['#clipCount', '#clipFast', '#clipPrio', '#clipPause', '#simStart'];
+$('#clipLoad').addEventListener('click', async () => {
+  $('#clipLoad').disabled = true;
+  try {
+    await loadClips();
+    clipButtons.forEach((b) => ($(b).disabled = false));
+    $('#clipLoad').textContent = 'Clips chargés';
+    log(`${R.clips.count} clips chargés en ${R.clips.loadMs} ms`);
+  } catch (e) { log('Clips : ' + e.message); $('#clipLoad').disabled = false; }
+  renderClips();
+});
+$('#clipCount').addEventListener('click', () => {
+  startClipTest('compter 1 à 10');
+  const t0 = ctx.currentTime + 0.3;
+  for (let i = 1; i <= 10; i++) playClip('n' + i, PRIO.count, t0 + (i - 1) * 1.2);
+  setTimeout(() => finishClipTest(), 12500);
+});
+$('#clipFast').addEventListener('click', () => {
+  startClipTest('comptage rapide');
+  for (let i = 1; i <= 10; i++) setTimeout(() => playClip('n' + i, PRIO.count), (i - 1) * 350);
+  setTimeout(() => finishClipTest(), 5000);
+});
+$('#clipPrio').addEventListener('click', () => {
+  startClipTest('encouragement puis Repos');
+  const t0 = ctx.currentTime + 0.2;
+  playClip('enc2', PRIO.encouragement, t0);
+  playClip('repos', PRIO.signal, t0 + 0.8);
+  setTimeout(() => finishClipTest(), 3500);
+});
+$('#clipPause').addEventListener('click', () => {
+  startClipTest('pause pendant une phrase');
+  const t0 = ctx.currentTime + 0.1;
+  playClip('enc1', PRIO.encouragement, t0);
+  playClip('partez', PRIO.signal, t0 + 2.2);
+  playClip('n1', PRIO.count, t0 + 3);
+  setTimeout(() => { cstat('cancelled', stopAllClips()); log('Pause : tous les sons annulés'); }, 700);
+  setTimeout(() => finishClipTest(), 4500);
+});
+
+// Séance simulée : calendrier sur l'horloge monotone, converti en temps audio à chaque passage.
+class SimSession {
+  start() {
+    this.startMono = now();
+    this.streams = [
+      { kind: 'beep', period: 1000, next: 1000 },
+      { kind: 'count', period: 3000, next: 3000, i: 0 },
+      { kind: 'enc', period: 15000, next: 16500, i: 0 },
+    ];
+    this.beeps = new Set();
+    this.stats = { staleDropped: 0, cancelledOnHide: 0, hides: 0, maxHiddenS: 0 };
+    startClipTest('séance simulée');
+    this.timer = setInterval(() => this.loop(), 100);
+    $('#simStart').disabled = true; $('#simStop').disabled = false;
+    this.loop();
+  }
+  loop() {
+    if (document.hidden || !ctx || ctx.state !== 'running') return;
+    const t = now(), offset = ctx.currentTime - t / 1000, horizon = t + 1500;
+    for (const s of this.streams) {
+      while (this.startMono + s.next <= horizon) {
+        const due = this.startMono + s.next;
+        s.next += s.period;
+        if (due < t - 50) { this.stats.staleDropped++; continue; } // jamais rejoué après une interruption
+        const when = due / 1000 + offset;
+        if (s.kind === 'beep') { const o = beep(when, 660, 0.05); this.beeps.add(o); o.onended = () => this.beeps.delete(o); }
+        else if (s.kind === 'count') playClip('n' + ((s.i++ % 10) + 1), PRIO.count, when);
+        else playClip(s.i++ % 2 ? 'enc2' : 'enc1', PRIO.encouragement, when);
+      }
+    }
+    renderClips();
+  }
+  onHidden() {
+    this.hiddenAt = now(); this.stats.hides++;
+    let n = stopAllClips();
+    for (const o of this.beeps) { try { o.stop(0); n++; } catch {} }
+    this.beeps.clear(); this.stats.cancelledOnHide += n;
+  }
+  onVisible() { if (this.hiddenAt) this.stats.maxHiddenS = Math.max(this.stats.maxHiddenS, Math.round((now() - this.hiddenAt) / 1000)); this.hiddenAt = null; }
+  stop() {
+    clearInterval(this.timer);
+    stopAllClips(); for (const o of this.beeps) { try { o.stop(0); } catch {} }
+    if (clipTest) Object.assign(clipTest, this.stats, { durationS: Math.round((now() - this.startMono) / 1000) });
+    finishClipTest('arrêt manuel');
+    $('#simStart').disabled = false; $('#simStop').disabled = true;
+    sim = null; renderClips();
+  }
+}
+$('#simStart').addEventListener('click', () => { sim = new SimSession(); sim.start(); });
+$('#simStop').addEventListener('click', () => sim?.stop());
+$('#noteClips').addEventListener('click', () => {
+  const t = R.clips.tests.at(-1); if (!t) return;
+  t.heard = $('#heardClips').value; save(); renderClips(); log(`Noté pour « ${t.test} » : ${t.heard}`);
+});
+
+/* ---------- 5. Veille et Wake Lock ---------- */
 let wakeLock = null, wakeTimer = null, hiddenMark = null;
 async function requestWake() {
   if (!('wakeLock' in navigator) || !R.wake?.running) return;
@@ -513,6 +706,8 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
     hiddenMark = { mono: now(), wall: Date.now(), audio: ctx ? ctx.currentTime : null };
     if (running) invalidateCycle('page masquée');
+    if (sim) sim.onHidden(); else stopAllClips();
+    activeSched?.cancelPending();
     log('Page masquée'); saveNow();
     return;
   }
@@ -524,13 +719,14 @@ document.addEventListener('visibilitychange', () => {
     log(`Retour après ${rec.hiddenS} s (mono−civile ${rec.monoMinusWallMs} ms, audio ${rec.audioStateOnReturn ?? 'inactif'})`);
     hiddenMark = null;
   }
+  sim?.onVisible();
   if (R.wake?.running && !wakeLock) requestWake();
   if (ctx && ctx.state !== 'running') ctx.resume().then(() => log('Contexte audio relancé')).catch((e) => log('Relance audio impossible : ' + e.message));
   renderWake();
 });
 window.addEventListener('pageshow', (e) => { if (e.persisted) log('Page restaurée depuis le cache'); });
 
-/* ---------- 5. Caméra ---------- */
+/* ---------- 6. Caméra ---------- */
 const video = $('#video'), overlay = $('#overlay'), octx = overlay.getContext('2d');
 const spark = $('#spark'), sctx = spark.getContext('2d');
 let vision = null, detector = null, detectorKind = null, delegateUsed = null, loadMs = null;
@@ -654,7 +850,7 @@ function feed(sig, t) {
   if (C.state === 'attente') { if (C.stable >= stableFrames() && p < 0.3) C.state = 'haut'; }
   else if (C.state === 'haut') { if (p > 0.7) C.state = 'bas'; }
   else if (C.state === 'bas' && p < 0.3) {
-    if (t - C.lastRepAt >= 400) { C.reps++; C.lastRepAt = t; if (ctx) beep(ctx.currentTime, 1500, 0.05); $('#reps').textContent = C.reps; }
+    if (t - C.lastRepAt >= 400) { C.reps++; C.lastRepAt = t; if (ctx) { if ($('#repClips').checked && clipBuf.n1) playClip('n' + (((C.reps - 1) % 10) + 1), PRIO.count); else beep(ctx.currentTime, 1500, 0.05); } $('#reps').textContent = C.reps; }
     C.state = 'haut';
   }
   showState();
@@ -787,7 +983,7 @@ function trialBase() {
     noDetectPct: T.frames ? r1((T.noDetect / T.frames) * 100) : null,
     invalidatedCycles: T.invalidatedCycles, invalidations: T.invalidations,
     tapLatencyMs: { p50: r1(pct(T.inputLatencyMs, 0.5)), p95: r1(pct(T.inputLatencyMs, 0.95)), n: T.inputLatencyMs.length },
-    beepsDuringCamera: camBeeper ? { dropped: camBeeper.stats.dropped, maxLoopGapMs: r1(camBeeper.stats.maxLoopGapMs) } : null,
+    repClips: $('#repClips').checked, beepsDuringCamera: camBeeper ? { dropped: camBeeper.stats.dropped, maxLoopGapMs: r1(camBeeper.stats.maxLoopGapMs) } : null,
   };
 }
 $('#saveTrial').addEventListener('click', () => {
@@ -845,7 +1041,7 @@ $('#exportRec').addEventListener('click', async () => {
   } catch (e) { log('Export : ' + e.message); }
 });
 
-/* ---------- 6. Rapport ---------- */
+/* ---------- 7. Rapport ---------- */
 function buildReport() {
   Object.assign(R.env, { iphone: $('#model').value || 'non renseigné', iosDeclared: $('#iosManual').value || 'non renseignée' });
   R.notes = $('#notes').value;
@@ -856,9 +1052,11 @@ function buildReport() {
     `${R.env.iphone}, iOS ${R.env.iosDeclared}, ${R.env.mode}`,
     'Note : les mesures audio portent sur la programmation des bips, pas sur l\'instant où le son est entendu.',
     ...R.audio.tests.map((t) => `Bips « ${t.test} » | ${t.session}, ${t.audioOutput}, ${t.ringSwitch}, Spotify ${yn(t.spotify)} | ${t.scheduled} programmés, ${t.dropped} abandonnés, blocage max ${t.maxLoopGapMs} ms | entendu : ${t.heard}`),
+    R.clips.count ? `Clips : ${R.clips.count} chargés en ${R.clips.loadMs} ms (${R.clips.voice})` : 'Clips : non chargés',
+    ...R.clips.tests.map((t) => `Clips « ${t.test} » | ${t.session}, ${t.audioOutput}, ${t.ringSwitch}, Spotify ${yn(t.spotify)} | joués ${t.played}, interrompus ${t.interrupted}, remplacés ${t.replaced}, écartés ${t.dropped}, annulés ${t.cancelled}${t.staleDropped != null ? `, périmés écartés ${t.staleDropped}, sons annulés au masquage ${t.cancelledOnHide}, masquage max ${t.maxHiddenS} s` : ''} | entendu : ${t.heard}`),
     ...R.voice.tests.map((t) => `Voix « ${t.test} » | ${t.voice} | ${t.session}, ${t.audioOutput}, Spotify ${yn(t.spotify)} | délai ${t.startDelayMs ?? '—'} ms | entendu : ${t.heard}`),
     ...R.camera.trials.map((t) => t.type === 'série'
-      ? `Série ${t.method} (${t.speed}, ${t.fps} fps, ${t.delegate}) : ${t.counted}/${t.real}, ${t.invalidatedCycles} cycle(s) annulé(s), sans détection ${t.noDetectPct} %, analyse p95 ${t.detectMs.p95} ms, réactivité p95 ${t.tapLatencyMs.p95 ?? '—'} ms`
+      ? `Série ${t.method} (${t.speed}, ${t.fps} fps, ${t.delegate}${t.repClips ? ', clips' : ''}) : ${t.counted}/${t.real}, ${t.invalidatedCycles} cycle(s) annulé(s), sans détection ${t.noDetectPct} %, analyse p95 ${t.detectMs.p95} ms, réactivité p95 ${t.tapLatencyMs.p95 ?? '—'} ms`
       : `Immobile ${t.method} : ${t.inventedReps} inventée(s)`),
     R.wake ? `Veille : ${R.wake.endedAfterS ?? R.wake.elapsedS} s, écran allumé obtenu ${R.wake.acquired}× libéré ${R.wake.releases.length}×, extinction observée : ${R.wake.screenOffObserved == null ? 'non notée' : yn(R.wake.screenOffObserved)}` : 'Veille : non testée',
     `Interruptions : ${R.interruptions.map((i) => `${i.hiddenS} s (mono−civile ${i.monoMinusWallMs} ms, audio ${i.audioStateOnReturn ?? '—'})`).join(' ; ') || 'aucune'}`,
